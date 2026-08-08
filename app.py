@@ -250,6 +250,7 @@ ADMIN_LOGIN_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>دخول المشرف</title>
     <style>
@@ -388,6 +389,7 @@ STUDENT_LOGIN_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>دخول الطالب</title>
     <style>
@@ -526,6 +528,7 @@ STUDENT_REGISTER_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تسجيل طالب جديد</title>
     <style>
@@ -690,6 +693,7 @@ ADMIN_DASHBOARD_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>لوحة التحكم</title>
     <style>
@@ -976,6 +980,7 @@ MANAGE_STUDENTS_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>إدارة الطلاب</title>
     <style>
@@ -1237,6 +1242,7 @@ REGISTRATION_REQUESTS_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>طلبات التسجيل</title>
     <style>
@@ -1447,6 +1453,7 @@ EVALUATION_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>التقييم اليومي</title>
     <style>
@@ -1732,6 +1739,7 @@ HOMEWORK_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>الواجبات</title>
     <style>
@@ -1987,6 +1995,7 @@ COMPETITIONS_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>المسابقات</title>
     <style>
@@ -2231,6 +2240,7 @@ COMPETITION_GRADES_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>درجات المسابقات</title>
     <style>
@@ -2461,6 +2471,7 @@ MESSAGES_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>الرسائل</title>
     <style>
@@ -2723,6 +2734,7 @@ STUDENT_DASHBOARD_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>لوحة الطالب</title>
     <style>
@@ -3001,6 +3013,7 @@ STUDENT_HOMEWORK_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>واجباتي</title>
     <style>
@@ -3190,6 +3203,7 @@ STUDENT_REPORT_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تقريري</title>
     <style>
@@ -3409,6 +3423,7 @@ STUDENT_COMPETITIONS_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>مسابقاتي</title>
     <style>
@@ -3585,6 +3600,7 @@ STUDENT_MESSAGES_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>رسائلي</title>
     <style>
@@ -3870,6 +3886,7 @@ STUDENT_PROFILE_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ملفي الشخصي</title>
     <style>
@@ -4072,6 +4089,7 @@ ADMIN_PROFILE_HTML = '''
 <html dir="rtl" lang="ar">
 <head>
     <meta charset="UTF-8">
+    <link rel="icon" href="/static/2.png" type="image/png">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ملف المشرف</title>
     <style>
