@@ -682,6 +682,14 @@ def get_student_rank(student_id):
         AND status = 'active'
     """, (student_id,))
     return result['rank'] if result else 0
+def get_protected_student_ids():
+    """أول 5 طلاب تم قبولهم في الموقع — محميون من الحذف والتعطيل وتغيير الترتيب"""
+    rows = query_all("SELECT id FROM students ORDER BY id ASC LIMIT 5")
+    return [r['id'] for r in rows]
+
+def is_protected_student(student_id):
+    return int(student_id) in get_protected_student_ids()
+
 def update_student_status(student_id, status):
     """تحديث حالة الطالب"""
     execute_query(
@@ -1305,9 +1313,22 @@ def buy_book(student_id, book_id):
     student = get_student_by_id(student_id)
     if not student or student['points'] < book['price_points']:
         return False
+
+    # حد أقصى لعدد مرات بيع الكتاب (لكتب الطلاب مثلاً 5 نسخ فقط)
+    if book.get('max_sales'):
+        sold_count = query_one(
+            "SELECT COUNT(*) as count FROM book_purchases WHERE book_id = ?",
+            (book_id,)
+        )['count']
+        if sold_count >= book['max_sales']:
+            return False
     
     # خصم النقاط
     deduct_points(student_id, book['price_points'], f"شراء كتاب: {book['title']}")
+    
+    # تحويل النقاط إلى الطالب البائع (إن وُجد)
+    if book.get('seller_student_id'):
+        add_points(book['seller_student_id'], book['price_points'], f"بيع كتاب: {book['title']}", 'earned')
     
     # تقليل الكمية
     execute_query(
@@ -1334,14 +1355,16 @@ def get_student_purchases(student_id):
 def create_book_offer(data):
     """إنشاء عرض بيع كتاب من طالب"""
     return execute_query("""
-        INSERT INTO book_offers (student_id, title, author, description, price_points, status)
-        VALUES (?, ?, ?, ?, ?, 'pending')
+        INSERT INTO book_offers (student_id, title, author, description, price_points, cover_url, pdf_url, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
     """, (
         data['student_id'],
         data['title'],
         data.get('author', ''),
         data.get('description', ''),
-        data.get('price_points', 10)
+        data.get('price_points', 10),
+        data.get('cover_url', ''),
+        data.get('pdf_url', '')
     ))
 def get_pending_offers():
     """الحصول على عروض البيع المعلقة"""
@@ -1370,11 +1393,15 @@ def approve_offer(offer_id, final_price=None):
         'author': offer['author'],
         'description': offer['description'],
         'price_points': final_price or offer['price_points'],
-        'quantity': 1,
+        'quantity': 5,
+        'cover_url': offer.get('cover_url') or '',
+        'pdf_url': offer.get('pdf_url') or '',
         'seller_student_id': offer['student_id'],
         'active': 1
     }
     book_id = create_book(book_data)
+    # حد أقصى 5 نسخ تُباع من كل كتاب يعرضه طالب
+    execute_query("UPDATE books SET max_sales = 5 WHERE id = ?", (book_id,))
     
     # تحديث حالة العرض
     execute_query(
@@ -5125,7 +5152,7 @@ MANAGE_STUDENTS_HTML = '''
                             <td>{% if student.id in fixed_ids %}<span style="color:var(--gold);font-weight:700;">{{ student.rank }}</span>{% else %}<input type="number" name="rank_{{ student.id }}" value="{{ student.rank }}" style="width:50px;padding:3px 6px;border-radius:4px;border:1px solid var(--glass-border);background:rgba(255,255,255,0.04);color:#fff;font-family:inherit;text-align:center;" lang="en">{% endif %}</td>
                             <td><span class="status-badge status-{{ student.status }}">{% if student.status == 'active' %}✅ نشط{% elif student.status == 'inactive' %}⏸️ غير نشط{% else %}⏳ معلق{% endif %}</span></td>
                             <td><span class="status-badge status-{{ student.payment_status }}">{% if student.payment_status == 'paid' %}💰 مدفوع{% elif student.payment_status == 'pending' %}⏳ معلق{% else %}💳 غير مدفوع{% endif %}</span></td>
-                            <td><div class="action-buttons"><button type="button" class="btn btn-primary btn-xs" onclick="openEditModal('{{ student.id }}')">✏️</button><button type="button" class="btn btn-success btn-xs" onclick="toggleStatus('{{ student.id }}')">🔄</button><button type="button" class="btn btn-danger btn-xs" onclick="deleteStudent('{{ student.id }}')">🗑️</button><a href="{{ url_for('admin_view_student', student_id=student.id) }}" class="btn btn-outline btn-xs">👤</a></div></td>
+                            <td><div class="action-buttons"><button type="button" class="btn btn-primary btn-xs" onclick="openEditModal('{{ student.id }}')">✏️</button>{% if student.id not in fixed_ids %}<button type="button" class="btn btn-success btn-xs" onclick="toggleStatus('{{ student.id }}')">🔄</button><button type="button" class="btn btn-danger btn-xs" onclick="deleteStudent('{{ student.id }}')">🗑️</button>{% endif %}<a href="{{ url_for('admin_view_student', student_id=student.id) }}" class="btn btn-outline btn-xs">👤</a></div></td>
                         </tr>
                         {% else %}
                         <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px 0;"><div style="font-size:40px;margin-bottom:10px;">📭</div>لا يوجد طلاب</td></tr>
@@ -14427,7 +14454,12 @@ ADMIN_STORE_HTML = '''
                             <tr>
                                 <td>{{ offer.id }}</td>
                                 <td>{{ offer.student_name }}</td>
-                                <td style="text-align:right;font-weight:600;">{{ offer.title }}</td>
+                                <td style="text-align:right;font-weight:600;">
+                                    {{ offer.title }}
+                                    {% if offer.pdf_url %}
+                                    <a href="{{ offer.pdf_url }}" target="_blank" style="margin-inline-start:6px;font-size:11px;">📄 معاينة</a>
+                                    {% endif %}
+                                </td>
                                 <td>{{ offer.author or '—' }}</td>
                                 <td>{{ offer.price_points }} نقطة</td>
                                 <td>{{ offer.created_at|fmtdt if offer.created_at else '—' }}</td>
@@ -22636,6 +22668,23 @@ STUDENT_STORE_HTML = '''
                         </div>
                     </div>
 
+                    <!-- رفع ملف الكتاب PDF -->
+                    <div class="form-group">
+                        <label>📄 ملف الكتاب (PDF) <span class="required">*</span></label>
+                        <div class="file-upload-area" id="pdfUploadArea">
+                            <div class="upload-icon">📄</div>
+                            <div class="upload-text">انقر لاختيار ملف الكتاب</div>
+                            <div class="upload-sub">PDF فقط</div>
+                            <input type="file" name="pdf_file" id="pdfFileInput" accept=".pdf" required onchange="handleFileSelect(this, 'pdf')">
+                        </div>
+                        <div class="file-preview" id="pdfPreview">
+                            <span class="file-icon">📄</span>
+                            <span class="file-name" id="pdfFileName">اسم الملف</span>
+                            <span class="file-size" id="pdfFileSize">0 KB</span>
+                            <button type="button" class="remove-file" onclick="removeFile('pdf')">✕</button>
+                        </div>
+                    </div>
+
                     <div class="form-group">
                         <label>📝 الوصف</label>
                         <textarea name="description" placeholder="وصف الكتاب وحالته..."></textarea>
@@ -22681,6 +22730,7 @@ STUDENT_STORE_HTML = '''
                     <div class="actions">
                         {% if purchase.pdf_url %}
                         <a href="{{ purchase.pdf_url }}" target="_blank" class="btn btn-primary btn-xs">📖 قراءة</a>
+                        <a href="{{ purchase.pdf_url }}" download class="btn btn-secondary btn-xs">📥 تحميل</a>
                         {% endif %}
                         <span style="font-size:11px;color:var(--text-muted);">📅 {{ purchase.created_at|fmtdt if purchase.created_at else '—' }}</span>
                     </div>
@@ -22787,9 +22837,10 @@ STUDENT_STORE_HTML = '''
             const file = input.files[0];
             if (!file) return;
 
-            // التحقق من الحجم (5MB كحد أقصى للصور)
-            if (file.size > 5 * 1024 * 1024) {
-                showToast('error', '❌ خطأ', 'الملف كبير جداً، الحد الأقصى 5MB');
+            // الحد الأقصى: 5MB للصور، 30MB لملفات الكتب PDF
+            const maxSize = (type === 'pdf' ? 30 : 5) * 1024 * 1024;
+            if (file.size > maxSize) {
+                showToast('error', '❌ خطأ', 'الملف كبير جداً، الحد الأقصى ' + (type === 'pdf' ? '30MB' : '5MB'));
                 input.value = '';
                 return;
             }
@@ -22802,7 +22853,7 @@ STUDENT_STORE_HTML = '''
             sizeEl.textContent = (file.size / 1024).toFixed(1) + ' KB';
 
             const iconEl = preview.querySelector('.file-icon');
-            iconEl.textContent = '🖼️';
+            iconEl.textContent = type === 'pdf' ? '📄' : '🖼️';
 
             preview.classList.add('show');
 
@@ -24112,7 +24163,7 @@ def admin_dashboard():
 def manage_students():
     """إدارة الطلاب"""
     students = get_all_students()
-    fixed_ids = [1]  # الطلاب المحميين من التعديل
+    fixed_ids = get_protected_student_ids()  # أول 5 طلاب مقبولين، محميون من التعديل
     
     return render_template_string(MANAGE_STUDENTS_HTML, students=students, fixed_ids=fixed_ids)
 @app.route('/admin/students/toggle/<int:student_id>', methods=['POST'])
@@ -24122,6 +24173,8 @@ def toggle_student_status(student_id):
     student = get_student_by_id(student_id)
     if student:
         new_status = 'inactive' if student['status'] == 'active' else 'active'
+        if new_status == 'inactive' and is_protected_student(student_id):
+            return jsonify({'success': False, 'message': 'لا يمكن تعطيل أحد أول 5 طلاب مقبولين'})
         update_student_status(student_id, new_status)
         return jsonify({'success': True})
     return jsonify({'success': False}), 404
@@ -24129,8 +24182,8 @@ def toggle_student_status(student_id):
 @login_required('admin')
 def delete_student_route(student_id):
     """حذف طالب"""
-    # منع حذف الطالب الافتراضي
-    if student_id == 1:
+    # منع حذف الطالب الافتراضي أو أحد أول 5 طلاب مقبولين
+    if student_id == 1 or is_protected_student(student_id):
         return jsonify({'success': False, 'message': 'لا يمكن حذف هذا الطالب'})
     
     delete_student(student_id)
@@ -24146,11 +24199,15 @@ def bulk_student_action():
     if not ids or not action:
         return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
     
+    protected_ids = get_protected_student_ids()
+
     if action == 'activate':
         for student_id in ids:
             update_student_status(student_id, 'active')
     elif action == 'deactivate':
         for student_id in ids:
+            if int(student_id) in protected_ids:
+                continue
             update_student_status(student_id, 'inactive')
     else:
         return jsonify({'success': False, 'message': 'إجراء غير معروف'})
@@ -24165,6 +24222,8 @@ def update_student_rank():
     rank = data.get('rank')
     
     if student_id and rank is not None:
+        if is_protected_student(student_id):
+            return jsonify({'success': False, 'message': 'لا يمكن تغيير ترتيب أحد أول 5 طلاب مقبولين'})
         update_student(student_id, {'rank': rank})
         return jsonify({'success': True})
     return jsonify({'success': False})
@@ -26049,14 +26108,24 @@ def sell_book_route():
     description = request.form.get('description')
     price_points = request.form.get('price_points', 10)
     cover_file = request.files.get('cover_file')
+    pdf_file = request.files.get('pdf_file')
     
     if not title:
         return jsonify({'success': False, 'message': 'عنوان الكتاب مطلوب'})
+
+    if not pdf_file or not pdf_file.filename:
+        return jsonify({'success': False, 'message': 'يجب رفع ملف الكتاب بصيغة PDF'})
+
+    if not pdf_file.filename.lower().endswith('.pdf'):
+        return jsonify({'success': False, 'message': 'الملف يجب أن يكون بصيغة PDF'})
     
     # رفع صورة الغلاف
     cover_url = None
     if cover_file and cover_file.filename:
         cover_url = save_uploaded_file(cover_file, 'books')
+
+    # رفع ملف الكتاب PDF
+    pdf_url = save_uploaded_file(pdf_file, 'books')
     
     create_book_offer({
         'student_id': student['id'],
@@ -26064,7 +26133,8 @@ def sell_book_route():
         'author': author,
         'description': description,
         'price_points': int(price_points),
-        'cover_url': cover_url
+        'cover_url': cover_url,
+        'pdf_url': pdf_url
     })
     
     return jsonify({'success': True, 'message': 'تم إرسال العرض بنجاح'})
@@ -26134,42 +26204,36 @@ def serve_upload(filename):
 
 # ===== إضافة الأعمدة المفقودة تلقائياً =====
 def add_missing_columns():
-    """هذه الدالة تضيف الأعمدة المفقودة إلى قاعدة البيانات"""
-    try:
-        # 1. نتحقق من وجود عمود "points"
-        result = query_one("""
-            SELECT column_name 
-            FROM information_schema.columns 
-            WHERE table_name='students' AND column_name='points'
-        """)
-        
-        # 2. إذا كان موجوداً، نخرج من الدالة (لا حاجة لفعل شيء)
-        if result:
-            print("✅ الأعمدة موجودة مسبقاً")
-            return
-        
-        # 3. إذا لم يكن موجوداً، نضيفه
-        print("🔄 جاري إضافة الأعمدة المفقودة...")
-        
-        # 4. قائمة بالأعمدة التي نريد إضافتها
-        columns_to_add = [
-            ('students', 'points', 'INTEGER DEFAULT 0'),
-            ('students', 'last_monthly_xp', 'VARCHAR(7)'),
-            ('students', 'notes', 'TEXT'),
-        ]
-        
-        # 5. نضيف كل عمود
-        for table, column, type in columns_to_add:
-            try:
-                execute_query(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {type}")
-                print(f"✅ تم إضافة {column} إلى {table}")
-            except Exception as e:
-                print(f"⚠️ خطأ: {e}")
-        
-        print("✅ تم إضافة جميع الأعمدة!")
-        
-    except Exception as e:
-        print(f"⚠️ خطأ: {e}")
+    """هذه الدالة تضيف الأعمدة المفقودة إلى قاعدة البيانات (تُشغَّل في كل مرة، وتضيف فقط ما هو ناقص)"""
+    columns_to_add = [
+        ('students', 'points', 'INTEGER DEFAULT 0'),
+        ('students', 'last_monthly_xp', 'VARCHAR(7)'),
+        ('students', 'notes', 'TEXT'),
+        ('students', 'is_protected', 'BOOLEAN DEFAULT FALSE'),
+        ('students', 'sort_order', 'INTEGER'),
+        ('students', 'privacy_locked', 'BOOLEAN DEFAULT FALSE'),
+        ('students', 'theme_color', 'VARCHAR(20)'),
+        ('students', 'dark_mode', 'BOOLEAN DEFAULT FALSE'),
+        ('students', 'push_subscription', 'TEXT'),
+        ('admins', 'push_subscription', 'TEXT'),
+        ('book_offers', 'pdf_url', 'TEXT'),
+        ('book_offers', 'cover_url', 'TEXT'),
+        ('books', 'max_sales', 'INTEGER'),
+    ]
+
+    for table, column, coltype in columns_to_add:
+        try:
+            exists = query_one("""
+                SELECT column_name
+                FROM information_schema.columns
+                WHERE table_name=%s AND column_name=%s
+            """, (table, column))
+            if exists:
+                continue
+            execute_query(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {coltype}")
+            print(f"✅ تم إضافة {column} إلى {table}")
+        except Exception as e:
+            print(f"⚠️ خطأ أثناء إضافة {column} إلى {table}: {e}")
 
 # 6. نشغل الدالة عند بدء التطبيق
 add_missing_columns()
