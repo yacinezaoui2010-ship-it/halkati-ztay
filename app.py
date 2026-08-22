@@ -18,7 +18,9 @@ from werkzeug.utils import secure_filename
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'qU8xL9pK2mN5vB7cXzW4fR6tY3jH0sE1')
 app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
-
+@app.context_processor
+def inject_globals():
+    return dict(datetime=datetime)
 # ============================================================ #
 # ====== SECTION 1: CONFIGURATION ============================= #
 # ============================================================ #
@@ -579,35 +581,25 @@ def get_user_messages(user_id, other_user_id, limit=50, user_type=None, other_us
         ORDER BY created_at DESC LIMIT ?
     """, (user_id, other_user_id, other_user_id, user_id, limit))
 def get_user_contacts(user_id, exclude_id=None, user_type='student'):
-    """الحصول على قائمة جهات الاتصال - جميع الطلاب النشطين.
-    ملاحظة مهمة: exclude_id يُستخدم فقط لاستبعاد الطالب نفسه من قائمته الخاصة.
-    لا يجب تمريره عند استدعاء الدالة من طرف المشرف (admin)، لأن معرف المشرف
-    يأتي من جدول منفصل (admins) وقد يتطابق رقمياً بالصدفة مع معرف أحد الطلاب،
-    فاستبعاده سابقاً بهذه الطريقة كان يُخفي ذلك الطالب بالخطأ من قائمة
-    محادثات المشرف ويمنعه من مراسلته.
-    user_type هو نوع المستخدم الحالي (admin أو student)، ويُستخدم لتصفية
-    الرسائل بدقة عبر receiver_type/sender_type حتى لا تختلط محادثة هذا
-    المستخدم مع محادثة شخص آخر يحمل نفس المعرف رقمياً في الجدول الآخر.
-    (is_group = 0 OR is_group IS NULL) يستبعد رسائل المجموعات من معاينة
-    آخر رسالة/عدد غير المقروء الخاصين بالمحادثة الفردية."""
-    query = """
+    """الحصول على قائمة جهات الاتصال - جميع الطلاب النشطين."""
+    inner = """
         SELECT 
             s.id as contact_id,
             s.name,
             s.email,
             s.status,
             (SELECT message FROM messages 
-             WHERE ((sender_id = s.id AND sender_type = 'student' AND receiver_id = ? AND receiver_type = ?)
-                 OR (sender_id = ? AND sender_type = ? AND receiver_id = s.id AND receiver_type = 'student'))
+             WHERE ((sender_id = s.id AND sender_type = 'student' AND receiver_id = %s AND receiver_type = %s)
+                 OR (sender_id = %s AND sender_type = %s AND receiver_id = s.id AND receiver_type = 'student'))
                AND (is_group = 0 OR is_group IS NULL)
              ORDER BY created_at DESC LIMIT 1) as last_message,
             (SELECT created_at FROM messages 
-             WHERE ((sender_id = s.id AND sender_type = 'student' AND receiver_id = ? AND receiver_type = ?)
-                 OR (sender_id = ? AND sender_type = ? AND receiver_id = s.id AND receiver_type = 'student'))
+             WHERE ((sender_id = s.id AND sender_type = 'student' AND receiver_id = %s AND receiver_type = %s)
+                 OR (sender_id = %s AND sender_type = %s AND receiver_id = s.id AND receiver_type = 'student'))
                AND (is_group = 0 OR is_group IS NULL)
              ORDER BY created_at DESC LIMIT 1) as last_time,
             COALESCE((SELECT COUNT(*) FROM messages 
-             WHERE sender_id = s.id AND sender_type = 'student' AND receiver_id = ? AND receiver_type = ? AND is_read = 0
+             WHERE sender_id = s.id AND sender_type = 'student' AND receiver_id = %s AND receiver_type = %s AND is_read = 0
                AND (is_group = 0 OR is_group IS NULL)), 0) as unread
         FROM students s
         WHERE s.status = 'active'
@@ -616,10 +608,12 @@ def get_user_contacts(user_id, exclude_id=None, user_type='student'):
               user_id, user_type, user_id, user_type,
               user_id, user_type]
     if exclude_id is not None:
-        query += " AND s.id != ?"
+        inner += " AND s.id != %s"
         params.append(exclude_id)
-    query += " ORDER BY COALESCE(last_time, '1970-01-01') DESC, s.name ASC"
-    return query_all(query, tuple(params))
+    
+    # ✅ الحل: تغليف الاستعلام ليصبح last_time متاحاً في ORDER BY
+    sql = "SELECT * FROM (" + inner + ") AS contacts ORDER BY COALESCE(last_time, '1970-01-01') DESC, name ASC"
+    return query_all(sql, tuple(params))
 # ============================================================ #
 # ====== SECTION 7: STUDENT HELPERS =========================== #
 # ============================================================ #
@@ -1896,6 +1890,7 @@ def init_db():
     cur.close()
     conn.close()
     print("✅ قاعدة البيانات جاهزة!")
+    
 ADMIN_VIEW_STUDENT_HTML = '''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -1991,7 +1986,7 @@ ADMIN_VIEW_STUDENT_HTML = '''
         </table>
     </div>
 </div>
-    <!-- ===== قسم المجموعات ===== -->
+        <!-- ===== قسم المجموعات ===== -->
     <div style="margin-top:20px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.1);border-radius:14px;padding:20px;">
         <h3 style="margin-bottom:12px;color:var(--gold);">👥 المجموعات</h3>
         {% if student_groups %}
@@ -2006,10 +2001,9 @@ ADMIN_VIEW_STUDENT_HTML = '''
             <p style="color:var(--text-muted);font-size:13px;">📭 الطالب ليس عضواً في أي مجموعة</p>
         {% endif %}
     </div>
+</div>  <!-- ✅ نهاية .container -->
 </body>
 </html>
-'''
-
 init_db()
 # ============================================================ #
 # ====== الصفحة 1: الصفحة الرئيسية (HOME) ==================== #
