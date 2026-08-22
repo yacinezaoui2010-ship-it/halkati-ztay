@@ -373,6 +373,115 @@ def deduct_points(student_id, amount, reason):
         return False
     
     return add_points(student_id, amount, reason, 'spent')
+
+# ============================================================ #
+# ====== SECTION 5B: خصوصية الصدارة ومظهر الصفحات (اقتصاد XP) = #
+# ============================================================ #
+OWNER_ACCOUNT_EMAIL = 'yacinezaoui2010@gmail.com'
+PRIVACY_LOCK_COST = 2000
+PRIVACY_UNLOCK_COST = 1000
+PRIVACY_UNLOCK_VALID_HOURS = 24
+THEME_SINGLE_COLOR_COST = 250
+THEME_GRADIENT_COST = 500
+ALLOWED_THEME_COLORS = {
+    '#c9a227', '#e8c84a', '#1a7a8e', '#134e5e', '#8e24aa', '#3949ab',
+    '#00897b', '#d81b60', '#f4511e', '#5e35b1', '#00acc1', '#7cb342',
+    '#c62828', '#6d4c41', '#37474f', '#fdd835', '#1a1a3e', '#2a2a6e',
+}
+
+def get_owner_student():
+    """جلب حساب الطالب الذي تُحوَّل إليه نقاط عمليات الخصوصية والمظهر"""
+    return query_one("SELECT id FROM students WHERE email = %s", (OWNER_ACCOUNT_EMAIL,))
+
+def credit_owner_account(amount, reason):
+    """تحويل النقاط المدفوعة في عمليات الخصوصية/المظهر إلى حساب المالك"""
+    owner = get_owner_student()
+    if owner:
+        add_points(owner['id'], amount, reason, 'earned')
+
+def lock_student_privacy(student_id):
+    """تشفير معلومات الطالب (الاسم/النقاط/الشارات) في لوحة الصدارة - 2000 XP"""
+    student = query_one("SELECT points, privacy_locked FROM students WHERE id = ?", (student_id,))
+    if not student:
+        return False, 'الطالب غير موجود'
+    if student['privacy_locked']:
+        return False, 'معلوماتك مشفّرة بالفعل'
+    if student['points'] < PRIVACY_LOCK_COST:
+        return False, f'تحتاج {PRIVACY_LOCK_COST} نقطة XP لتشفير معلوماتك'
+    if not deduct_points(student_id, PRIVACY_LOCK_COST, 'تشفير معلومات الصدارة'):
+        return False, 'فشلت عملية خصم النقاط'
+    execute_query("UPDATE students SET privacy_locked = TRUE WHERE id = ?", (student_id,))
+    credit_owner_account(PRIVACY_LOCK_COST, f'تشفير طالب #{student_id} في الصدارة')
+    return True, 'تم تشفير معلوماتك في لوحة الصدارة 🔒'
+
+def unlock_own_privacy(student_id):
+    """إظهار معلوماتك الخاصة في الصدارة من جديد (مجاناً)"""
+    execute_query("UPDATE students SET privacy_locked = FALSE WHERE id = ?", (student_id,))
+    return True, 'تم إظهار معلوماتك في لوحة الصدارة'
+
+def has_active_privacy_unlock(viewer_id, target_id):
+    """التحقق مما إذا كان الطالب قد دفع مسبقاً لفك تشفير هذا الطالب خلال آخر 24 ساعة"""
+    row = query_one(f"""
+        SELECT id FROM privacy_unlocks
+        WHERE viewer_id = ? AND target_id = ?
+          AND unlocked_at > (NOW() - INTERVAL '{PRIVACY_UNLOCK_VALID_HOURS} hours')
+        ORDER BY unlocked_at DESC LIMIT 1
+    """, (viewer_id, target_id))
+    return row is not None
+
+def get_active_privacy_unlocks(viewer_id):
+    """جلب معرّفات الطلاب الذين لا يزال فك تشفيرهم سارياً بالنسبة لهذا المستخدم"""
+    rows = query_all(f"""
+        SELECT DISTINCT target_id FROM privacy_unlocks
+        WHERE viewer_id = ?
+          AND unlocked_at > (NOW() - INTERVAL '{PRIVACY_UNLOCK_VALID_HOURS} hours')
+    """, (viewer_id,))
+    return {r['target_id'] for r in rows}
+
+def unlock_other_student_privacy(viewer_id, target_id):
+    """دفع 1000 XP لفك تشفير معلومات طالب آخر لمدة 24 ساعة (تُدفع في كل مرة تنتهي فيها الصلاحية)"""
+    if viewer_id == target_id:
+        return False, 'لا حاجة لفك تشفير معلوماتك أنت'
+    target = query_one("SELECT privacy_locked FROM students WHERE id = ?", (target_id,))
+    if not target:
+        return False, 'الطالب غير موجود'
+    if not target['privacy_locked']:
+        return False, 'معلومات هذا الطالب غير مشفّرة أصلاً'
+    if has_active_privacy_unlock(viewer_id, target_id):
+        return True, 'معلوماته مفكوكة بالفعل لديك حالياً'
+    viewer = query_one("SELECT points FROM students WHERE id = ?", (viewer_id,))
+    if not viewer or viewer['points'] < PRIVACY_UNLOCK_COST:
+        return False, f'تحتاج {PRIVACY_UNLOCK_COST} نقطة XP لفك التشفير'
+    if not deduct_points(viewer_id, PRIVACY_UNLOCK_COST, f'فك تشفير طالب #{target_id} في الصدارة'):
+        return False, 'فشلت عملية خصم النقاط'
+    execute_query(
+        "INSERT INTO privacy_unlocks (viewer_id, target_id, unlocked_at) VALUES (?, ?, NOW())",
+        (viewer_id, target_id)
+    )
+    credit_owner_account(PRIVACY_UNLOCK_COST, f'فك تشفير طالب #{target_id} بواسطة طالب #{viewer_id}')
+    return True, f'تم فك التشفير لمدة {PRIVACY_UNLOCK_VALID_HOURS} ساعة ⏳'
+
+def set_student_theme(student_id, color1, color2=None):
+    """شراء لون واحد (250 XP) لكل صفحات الطالب، أو تدرج لونين (500 XP)"""
+    if not color1 or color1 not in ALLOWED_THEME_COLORS:
+        return False, 'لون غير صالح'
+    is_gradient = bool(color2)
+    if is_gradient and color2 not in ALLOWED_THEME_COLORS:
+        return False, 'لون التدرج الثاني غير صالح'
+    cost = THEME_GRADIENT_COST if is_gradient else THEME_SINGLE_COLOR_COST
+    student = query_one("SELECT points FROM students WHERE id = ?", (student_id,))
+    if not student or student['points'] < cost:
+        return False, f'تحتاج {cost} نقطة XP لهذه الميزة'
+    reason = 'شراء تدرج ألوان للصفحات' if is_gradient else 'شراء لون موحّد للصفحات'
+    if not deduct_points(student_id, cost, reason):
+        return False, 'فشلت عملية خصم النقاط'
+    execute_query(
+        "UPDATE students SET theme_color = ?, theme_color2 = ?, theme_gradient = ? WHERE id = ?",
+        (color1, color2 if is_gradient else None, is_gradient, student_id)
+    )
+    credit_owner_account(cost, f'شراء مظهر بواسطة طالب #{student_id}')
+    return True, 'تم تحديث ألوان صفحاتك 🎨'
+
 def run_monthly_xp_disbursement():
     """صرف تلقائي لـ 1000 نقطة XP لكل طالب نشط في بداية كل شهر جديد، دون تدخل المشرف"""
     current_month = datetime.now().strftime('%Y-%m')
@@ -3224,25 +3333,46 @@ LEADERBOARD_HTML = '''
     {% if top_students|length >= 3 %}
     <div class="podium" id="podium">
         {% set top3 = top_students[:3] %}
-        <div class="podium-item second" onclick="showStudentProfile('{{ top3[1].id }}')">
+        <div class="podium-item second" {% if not top3[1].is_locked %}onclick="showStudentProfile('{{ top3[1].id }}')"{% endif %}>
             <span class="medal">🥈</span>
+            {% if top3[1].is_locked %}
+            <div class="avatar silver">🔒</div>
+            <div class="name">🔒 مشفّر</div>
+            <div class="points">🔒🔒🔒</div>
+            {% if viewer_id %}<button class="btn btn-gold btn-sm" onclick="event.stopPropagation(); decryptStudent({{ top3[1].id }})">🔓 فك (1000 XP)</button>{% endif %}
+            {% else %}
             <div class="avatar silver">{{ top3[1].name[0]|upper }}</div>
             <div class="name">{{ top3[1].name }}</div>
             <div class="points">{{ top3[1].points|default(0, true) }} نقطة</div>
+            {% endif %}
             <div class="position">المركز الثاني</div>
         </div>
-        <div class="podium-item first" onclick="showStudentProfile('{{ top3[0].id }}')">
+        <div class="podium-item first" {% if not top3[0].is_locked %}onclick="showStudentProfile('{{ top3[0].id }}')"{% endif %}>
             <span class="medal">🥇</span>
+            {% if top3[0].is_locked %}
+            <div class="avatar gold">🔒</div>
+            <div class="name">🔒 مشفّر</div>
+            <div class="points">🔒🔒🔒</div>
+            {% if viewer_id %}<button class="btn btn-gold btn-sm" onclick="event.stopPropagation(); decryptStudent({{ top3[0].id }})">🔓 فك (1000 XP)</button>{% endif %}
+            {% else %}
             <div class="avatar gold">{{ top3[0].name[0]|upper }}</div>
             <div class="name">{{ top3[0].name }}</div>
             <div class="points">{{ top3[0].points|default(0, true) }} نقطة</div>
+            {% endif %}
             <div class="position">🏆 البطل</div>
         </div>
-        <div class="podium-item third" onclick="showStudentProfile('{{ top3[2].id }}')">
+        <div class="podium-item third" {% if not top3[2].is_locked %}onclick="showStudentProfile('{{ top3[2].id }}')"{% endif %}>
             <span class="medal">🥉</span>
+            {% if top3[2].is_locked %}
+            <div class="avatar bronze">🔒</div>
+            <div class="name">🔒 مشفّر</div>
+            <div class="points">🔒🔒🔒</div>
+            {% if viewer_id %}<button class="btn btn-gold btn-sm" onclick="event.stopPropagation(); decryptStudent({{ top3[2].id }})">🔓 فك (1000 XP)</button>{% endif %}
+            {% else %}
             <div class="avatar bronze">{{ top3[2].name[0]|upper }}</div>
             <div class="name">{{ top3[2].name }}</div>
             <div class="points">{{ top3[2].points|default(0, true) }} نقطة</div>
+            {% endif %}
             <div class="position">المركز الثالث</div>
         </div>
     </div>
@@ -3261,12 +3391,19 @@ LEADERBOARD_HTML = '''
         <div class="leaderboard-header"><div class="rank">#</div><div class="name">👤 الطالب</div><div class="points">⭐ النقاط</div><div class="badges">🏅 الشارات</div><div class="change">📈 التغيير</div></div>
         <div id="leaderboardRows">
             {% for student in top_students %}
-            <div class="leaderboard-row" data-rank="{{ loop.index }}" onclick="showStudentProfile('{{ student.id }}')">
+            <div class="leaderboard-row" data-rank="{{ loop.index }}" {% if not student.is_locked %}onclick="showStudentProfile('{{ student.id }}')"{% endif %} style="{% if student.theme_gradient and student.theme_color and student.theme_color2 %}background: linear-gradient(135deg, {{ student.theme_color }}33, {{ student.theme_color2 }}33);{% elif student.theme_color %}background: {{ student.theme_color }}22;{% endif %}">
                 <div class="rank">{% if loop.index == 1 %}<span class="medal">🥇</span>{% elif loop.index == 2 %}<span class="medal">🥈</span>{% elif loop.index == 3 %}<span class="medal">🥉</span>{% else %}<span class="num">{{ loop.index }}</span>{% endif %}</div>
-                <div class="name"><div class="avatar {% if loop.index == 1 %}gold{% elif loop.index == 2 %}silver{% elif loop.index == 3 %}bronze{% endif %}">{{ student.name[0]|upper }}</div><div><div class="full-name">{{ student.name }}</div><div class="sub-info">📚 {{ student.rank|default(0, true) }} مستوى</div></div></div>
+                {% if student.is_locked %}
+                <div class="name"><div class="avatar">🔒</div><div><div class="full-name">🔒 معلومات مشفّرة</div><div class="sub-info">محمي بواسطة الطالب</div></div></div>
+                <div class="points">🔒</div>
+                <div class="badges"><span class="empty">🔒</span></div>
+                <div class="change">{% if viewer_id %}<button class="btn btn-gold btn-sm" onclick="event.stopPropagation(); decryptStudent({{ student.id }})">🔓 فك (1000 XP)</button>{% else %}—{% endif %}</div>
+                {% else %}
+                <div class="name"><div class="avatar {% if loop.index == 1 %}gold{% elif loop.index == 2 %}silver{% elif loop.index == 3 %}bronze{% endif %}">{{ student.name[0]|upper }}</div><div><div class="full-name">{{ student.name }}{% if student.is_self and student.privacy_locked %} 🔒{% endif %}</div><div class="sub-info">📚 {{ student.rank|default(0, true) }} مستوى</div></div></div>
                 <div class="points">{{ student.points|default(0, true) }}</div>
                 <div class="badges">{% if loop.index <= 3 %}🏅🌟⭐{% elif loop.index <= 10 %}🏅🌟{% elif loop.index <= 25 %}🏅{% else %}<span class="empty">—</span>{% endif %}</div>
                 <div class="change {% if loop.index <= 3 %}up{% elif loop.index <= 5 %}down{% else %}same{% endif %}">{% if loop.index <= 3 %}↑ +{{ 5 - loop.index + 1 }}{% elif loop.index <= 5 %}↓ -{{ loop.index - 3 }}{% else %}—{% endif %}</div>
+                {% endif %}
             </div>
             {% else %}
             <div style="text-align:center;padding:40px 0;color:var(--text-muted);"><div style="font-size:48px;margin-bottom:12px;">📊</div><div>لا يوجد طلاب لعرضهم بعد</div></div>
@@ -3315,6 +3452,13 @@ function searchStudent(query) {
     });
 }
 function showStudentProfile(studentId) { alert('سيتم عرض ملف الطالب رقم: ' + studentId); }
+function decryptStudent(id) {
+    if (!confirm('سيتم خصم 1000 نقطة XP لفك تشفير معلومات هذا الطالب لمدة 24 ساعة. متابعة؟')) return;
+    fetch('/student/privacy/decrypt/' + id, { method: 'POST' })
+        .then(r => r.json())
+        .then(data => { alert(data.message); if (data.success) location.reload(); })
+        .catch(() => alert('حدث خطأ في الاتصال بالخادم'));
+}
 function exportLeaderboard() {
     let text = '🏆 لوحة الصدارة - حلقتي زتاي\\n' + '='.repeat(40) + '\\n\\n';
     document.querySelectorAll('.leaderboard-row[style*="display: grid"]').forEach((row, index) => {
@@ -14992,6 +15136,14 @@ STUDENT_DASHBOARD_HTML = '''
             .quick-actions { grid-template-columns: 1fr; }
         }
     </style>
+    {% if student.theme_color %}
+    <style>
+        :root {
+            --gold: {{ student.theme_color }} !important;
+            --gold-light: {{ student.theme_color2 if student.theme_gradient and student.theme_color2 else student.theme_color }} !important;
+        }
+    </style>
+    {% endif %}
 </head>
 <body>
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
@@ -16409,6 +16561,14 @@ STUDENT_PROFILE_HTML = '''
             .badges-grid { justify-content: center; }
         }
     </style>
+    {% if student.theme_color %}
+    <style>
+        :root {
+            --gold: {{ student.theme_color }} !important;
+            --gold-light: {{ student.theme_color2 if student.theme_gradient and student.theme_color2 else student.theme_color }} !important;
+        }
+    </style>
+    {% endif %}
 </head>
 <body>
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
@@ -16457,6 +16617,35 @@ STUDENT_PROFILE_HTML = '''
             {% endfor %}
         </div>
     </div>
+    <div class="badges-section">
+        <h3>🔐 الخصوصية في الصدارة</h3>
+        <div style="font-size:14px;color:var(--text-secondary);margin-bottom:10px;">
+            {% if student.privacy_locked %}معلوماتك مشفّرة حالياً في لوحة الصدارة 🔒 (لا يراها أحد إلا من يدفع لفك تشفيرها){% else %}معلوماتك ظاهرة حالياً بشكل طبيعي في لوحة الصدارة{% endif %}
+        </div>
+        {% if student.privacy_locked %}
+        <button class="btn btn-outline btn-sm" onclick="unlockPrivacy()">👁️ إظهار معلوماتي من جديد (مجاناً)</button>
+        {% else %}
+        <button class="btn btn-gold btn-sm" onclick="lockPrivacy()">🔒 تشفير معلوماتي في الصدارة (2000 XP)</button>
+        {% endif %}
+    </div>
+    <div class="badges-section">
+        <h3>🎨 مظهر صفحاتي</h3>
+        <div style="font-size:14px;color:var(--text-secondary);margin-bottom:10px;">
+            اللون الحالي:
+            <span style="display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:middle;background:{{ student.theme_color or '#c9a227' }};"></span>
+            {% if student.theme_gradient and student.theme_color2 %} + <span style="display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:middle;background:{{ student.theme_color2 }};"></span> (تدرج){% endif %}
+        </div>
+        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;" id="colorSwatches">
+            {% for c in ['#c9a227','#e8c84a','#1a7a8e','#134e5e','#8e24aa','#3949ab','#00897b','#d81b60','#f4511e','#5e35b1','#00acc1','#7cb342','#c62828','#6d4c41','#37474f','#fdd835'] %}
+            <div class="color-swatch" data-color="{{ c }}" onclick="pickColor(this)" style="width:28px;height:28px;border-radius:7px;cursor:pointer;border:2px solid transparent;background:{{ c }};"></div>
+            {% endfor %}
+        </div>
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+            <button class="btn btn-gold btn-sm" onclick="buyTheme(false)">🎨 اعتماد لون واحد (250 XP)</button>
+            <button class="btn btn-gold btn-sm" onclick="buyTheme(true)">🌈 دمج لونين بالتدرج (500 XP)</button>
+        </div>
+        <div class="hint" style="margin-top:8px;">اختر لوناً واحداً من الأعلى لشراء "لون واحد"، أو لوّنين لشراء "تدرج". يُطبَّق على صفحاتك.</div>
+    </div>
 </div>
 <div class="toast" id="toast"><div class="title" id="toastTitle">✅ تم</div><div class="message" id="toastMessage">تم تنفيذ العملية بنجاح</div></div>
 <script>
@@ -16483,6 +16672,48 @@ function showToast(type, title, message) {
     document.getElementById('toastMessage').textContent = message;
     clearTimeout(toast._timeout);
     toast._timeout = setTimeout(() => { toast.classList.remove('show'); }, 4000);
+}
+let selectedThemeColors = [];
+function pickColor(el) {
+    const color = el.dataset.color;
+    const idx = selectedThemeColors.indexOf(color);
+    if (idx > -1) {
+        selectedThemeColors.splice(idx, 1);
+        el.style.borderColor = 'transparent';
+        return;
+    }
+    if (selectedThemeColors.length >= 2) {
+        const removed = selectedThemeColors.shift();
+        document.querySelectorAll('.color-swatch').forEach(s => { if (s.dataset.color === removed) s.style.borderColor = 'transparent'; });
+    }
+    selectedThemeColors.push(color);
+    el.style.borderColor = '#fff';
+}
+function lockPrivacy() {
+    if (!confirm('سيتم خصم 2000 نقطة XP لتشفير معلوماتك في لوحة الصدارة. متابعة؟')) return;
+    fetch('/student/privacy/lock', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => { showToast(data.success ? 'success' : 'error', data.success ? '✅ تم' : '❌ خطأ', data.message); if (data.success) setTimeout(() => location.reload(), 1200); })
+        .catch(() => showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال بالخادم'));
+}
+function unlockPrivacy() {
+    fetch('/student/privacy/unlock_self', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => { showToast(data.success ? 'success' : 'error', data.success ? '✅ تم' : '❌ خطأ', data.message); if (data.success) setTimeout(() => location.reload(), 1200); })
+        .catch(() => showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال بالخادم'));
+}
+function buyTheme(isGradient) {
+    if (isGradient && selectedThemeColors.length !== 2) { showToast('error', '❌ خطأ', 'اختر لونين بالضبط لتفعيل التدرج'); return; }
+    if (!isGradient && selectedThemeColors.length < 1) { showToast('error', '❌ خطأ', 'اختر لوناً واحداً على الأقل'); return; }
+    const cost = isGradient ? 500 : 250;
+    if (!confirm('سيتم خصم ' + cost + ' نقطة XP. متابعة؟')) return;
+    const formData = new FormData();
+    formData.append('color1', selectedThemeColors[0]);
+    if (isGradient) formData.append('color2', selectedThemeColors[1]);
+    fetch('/student/theme/update', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => { showToast(data.success ? 'success' : 'error', data.success ? '✅ تم' : '❌ خطأ', data.message); if (data.success) setTimeout(() => location.reload(), 1200); })
+        .catch(() => showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال بالخادم'));
 }
 console.log('👤 ملف الطالب جاهز');
 console.log('🏅 عرض الشارات: ' + ({{ badges|length }} || 0));
@@ -26178,11 +26409,45 @@ def create_duel_route():
     duel_id = create_duel(student['id'], opponent_id, duel_type, int(wager_points), custom_type)
     
     return jsonify({'success': True, 'message': 'تم إرسال التحدي بنجاح', 'duel_id': duel_id})
+@app.route('/student/privacy/lock', methods=['POST'])
+@login_required('student')
+def student_privacy_lock():
+    """تشفير معلومات الطالب الحالي في لوحة الصدارة (2000 XP)"""
+    student = get_current_user()
+    ok, msg = lock_student_privacy(student['id'])
+    return jsonify({'success': ok, 'message': msg})
+
+@app.route('/student/privacy/unlock_self', methods=['POST'])
+@login_required('student')
+def student_privacy_unlock_self():
+    """إظهار معلومات الطالب الحالي من جديد في الصدارة (مجاناً)"""
+    student = get_current_user()
+    ok, msg = unlock_own_privacy(student['id'])
+    return jsonify({'success': ok, 'message': msg})
+
+@app.route('/student/privacy/decrypt/<int:target_id>', methods=['POST'])
+@login_required('student')
+def student_privacy_decrypt(target_id):
+    """دفع 1000 XP لفك تشفير معلومات طالب آخر لمدة 24 ساعة"""
+    student = get_current_user()
+    ok, msg = unlock_other_student_privacy(student['id'], target_id)
+    return jsonify({'success': ok, 'message': msg})
+
+@app.route('/student/theme/update', methods=['POST'])
+@login_required('student')
+def student_theme_update():
+    """شراء لون موحّد (250 XP) أو تدرج لونين (500 XP) لكل صفحات الطالب"""
+    student = get_current_user()
+    color1 = request.form.get('color1')
+    color2 = request.form.get('color2') or None
+    ok, msg = set_student_theme(student['id'], color1, color2)
+    return jsonify({'success': ok, 'message': msg})
+
 @app.route('/leaderboard')
 def leaderboard():
     """لوحة الصدارة"""
     top_students = query_all("""
-        SELECT id, name, points, rank, status
+        SELECT id, name, points, rank, status, privacy_locked, theme_color, theme_color2, theme_gradient
         FROM students
         WHERE status = 'active'
         ORDER BY points DESC
@@ -26191,11 +26456,19 @@ def leaderboard():
     
     # إضافة بيانات إضافية
     top_students = [dict(student) for student in top_students]
+
+    viewer_id = session.get('user_id') if session.get('role') == 'student' else None
+    unlocked_ids = get_active_privacy_unlocks(viewer_id) if viewer_id else set()
+
     for student in top_students:
         student['badges'] = get_student_badges(student['id'])
+        is_self = (viewer_id == student['id'])
+        student['is_self'] = is_self
+        student['is_locked'] = bool(student.get('privacy_locked')) and not is_self and student['id'] not in unlocked_ids
     
     return render_template_string(LEADERBOARD_HTML,
                                    top_students=top_students,
+                                   viewer_id=viewer_id,
                                    datetime=datetime)
 @app.route('/static/uploads/<path:filename>')
 def serve_upload(filename):
@@ -26213,6 +26486,8 @@ def add_missing_columns():
         ('students', 'sort_order', 'INTEGER'),
         ('students', 'privacy_locked', 'BOOLEAN DEFAULT FALSE'),
         ('students', 'theme_color', 'VARCHAR(20)'),
+        ('students', 'theme_color2', 'VARCHAR(20)'),
+        ('students', 'theme_gradient', 'BOOLEAN DEFAULT FALSE'),
         ('students', 'dark_mode', 'BOOLEAN DEFAULT FALSE'),
         ('students', 'push_subscription', 'TEXT'),
         ('admins', 'push_subscription', 'TEXT'),
@@ -26235,8 +26510,23 @@ def add_missing_columns():
         except Exception as e:
             print(f"⚠️ خطأ أثناء إضافة {column} إلى {table}: {e}")
 
+def ensure_privacy_unlocks_table():
+    """إنشاء جدول عمليات فك تشفير الطلاب في الصدارة إن لم يكن موجوداً"""
+    try:
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS privacy_unlocks (
+                id SERIAL PRIMARY KEY,
+                viewer_id INTEGER NOT NULL,
+                target_id INTEGER NOT NULL,
+                unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+    except Exception as e:
+        print(f"⚠️ خطأ أثناء إنشاء جدول privacy_unlocks: {e}")
+
 # 6. نشغل الدالة عند بدء التطبيق
 add_missing_columns()
+ensure_privacy_unlocks_table()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
