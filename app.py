@@ -636,6 +636,10 @@ def get_active_students():
     return query_all(
         "SELECT * FROM students WHERE status = 'active' ORDER BY name"
     )
+def get_protected_student_ids(limit=5):
+    """أول 5 طلاب مسجلين (الأقدم حسب id) - محميون من الحذف وتغيير الرتبة والتحويل لغير نشط"""
+    rows = query_all("SELECT id FROM students ORDER BY id ASC LIMIT 5")
+    return [row['id'] for row in rows][:limit]
 def get_student_stats(student_id):
     """الحصول على إحصائيات الطالب"""
     # عدد التقييمات
@@ -5203,7 +5207,7 @@ MANAGE_STUDENTS_HTML = '''
                             <td>{% if student.id in fixed_ids %}<span style="color:var(--gold);font-weight:700;">{{ student.rank }}</span>{% else %}<input type="number" name="rank_{{ student.id }}" value="{{ student.rank }}" style="width:50px;padding:3px 6px;border-radius:4px;border:1px solid var(--glass-border);background:rgba(255,255,255,0.04);color:#fff;font-family:inherit;text-align:center;" lang="en">{% endif %}</td>
                             <td><span class="status-badge status-{{ student.status }}">{% if student.status == 'active' %}✅ نشط{% elif student.status == 'inactive' %}⏸️ غير نشط{% else %}⏳ معلق{% endif %}</span></td>
                             <td><span class="status-badge status-{{ student.payment_status }}">{% if student.payment_status == 'paid' %}💰 مدفوع{% elif student.payment_status == 'pending' %}⏳ معلق{% else %}💳 غير مدفوع{% endif %}</span></td>
-                            <td><div class="action-buttons"><button type="button" class="btn btn-primary btn-xs" onclick="openEditModal('{{ student.id }}')">✏️</button><button type="button" class="btn btn-success btn-xs" onclick="toggleStatus('{{ student.id }}')">🔄</button><button type="button" class="btn btn-danger btn-xs" onclick="deleteStudent('{{ student.id }}')">🗑️</button><a href="{{ url_for('admin_view_student', student_id=student.id) }}" class="btn btn-outline btn-xs">👤</a></div></td>
+                            <td><div class="action-buttons"><button type="button" class="btn btn-primary btn-xs" onclick="openEditModal('{{ student.id }}')">✏️</button>{% if student.id in fixed_ids %}<button type="button" class="btn btn-success btn-xs" disabled title="محمي - أحد الطلاب الخمسة الأوائل" style="opacity:0.4;cursor:not-allowed;">🔄</button><button type="button" class="btn btn-danger btn-xs" disabled title="محمي - أحد الطلاب الخمسة الأوائل" style="opacity:0.4;cursor:not-allowed;">🗑️</button>{% else %}<button type="button" class="btn btn-success btn-xs" onclick="toggleStatus('{{ student.id }}')">🔄</button><button type="button" class="btn btn-danger btn-xs" onclick="deleteStudent('{{ student.id }}')">🗑️</button>{% endif %}<a href="{{ url_for('admin_view_student', student_id=student.id) }}" class="btn btn-outline btn-xs">👤</a></div></td>
                         </tr>
                         {% else %}
                         <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px 0;"><div style="font-size:40px;margin-bottom:10px;">📭</div>لا يوجد طلاب</td></tr>
@@ -24384,19 +24388,24 @@ def manage_students():
             if not student_id:
                 flash('طالب غير محدد', 'danger')
             else:
+                student_id = int(student_id)
+                protected_ids = get_protected_student_ids()
                 update_data = {
                     'name': name,
                     'phone': phone,
                     'parent_phone': parent_phone,
                     'address': address,
-                    'rank': int(rank),
-                    'status': status,
                     'payment_status': payment_status,
                     'notes': notes
                 }
+                if student_id in protected_ids:
+                    flash('تنبيه: لا يمكن تغيير رتبة أو تعطيل أحد الطلاب الخمسة الأوائل، تم تجاهل هذا التغيير', 'warning')
+                else:
+                    update_data['rank'] = int(rank)
+                    update_data['status'] = status
                 if password:
                     update_data['password'] = password
-                update_student(int(student_id), update_data)
+                update_student(student_id, update_data)
                 flash('تم تحديث بيانات الطالب بنجاح', 'success')
         else:
             flash('إجراء غير معروف', 'danger')
@@ -24404,7 +24413,7 @@ def manage_students():
         return redirect(url_for('manage_students'))
 
     students = get_all_students()
-    fixed_ids = [1]  # الطلاب المحميين من التعديل
+    fixed_ids = get_protected_student_ids()  # الطلاب المحميين من التعديل (أول 5 طلاب مسجلين)
     
     return render_template_string(MANAGE_STUDENTS_HTML, students=students, fixed_ids=fixed_ids)
 @app.route('/admin/students/toggle/<int:student_id>', methods=['POST'])
@@ -24414,6 +24423,8 @@ def toggle_student_status(student_id):
     student = get_student_by_id(student_id)
     if student:
         new_status = 'inactive' if student['status'] == 'active' else 'active'
+        if new_status == 'inactive' and student_id in get_protected_student_ids():
+            return jsonify({'success': False, 'message': 'لا يمكن تعطيل أحد الطلاب الخمسة الأوائل'}), 403
         update_student_status(student_id, new_status)
         return jsonify({'success': True})
     return jsonify({'success': False}), 404
@@ -24421,9 +24432,9 @@ def toggle_student_status(student_id):
 @login_required('admin')
 def delete_student_route(student_id):
     """حذف طالب"""
-    # منع حذف الطالب الافتراضي
-    if student_id == 1:
-        return jsonify({'success': False, 'message': 'لا يمكن حذف هذا الطالب'})
+    # منع حذف أول 5 طلاب مسجلين
+    if student_id in get_protected_student_ids():
+        return jsonify({'success': False, 'message': 'لا يمكن حذف أحد الطلاب الخمسة الأوائل'})
     
     delete_student(student_id)
     return jsonify({'success': True})
@@ -24442,7 +24453,10 @@ def bulk_student_action():
         for student_id in ids:
             update_student_status(student_id, 'active')
     elif action == 'deactivate':
+        protected_ids = get_protected_student_ids()
         for student_id in ids:
+            if int(student_id) in protected_ids:
+                continue
             update_student_status(student_id, 'inactive')
     else:
         return jsonify({'success': False, 'message': 'إجراء غير معروف'})
@@ -24457,6 +24471,8 @@ def update_student_rank():
     rank = data.get('rank')
     
     if student_id and rank is not None:
+        if int(student_id) in get_protected_student_ids():
+            return jsonify({'success': False, 'message': 'لا يمكن تغيير رتبة أحد الطلاب الخمسة الأوائل'})
         update_student(student_id, {'rank': rank})
         return jsonify({'success': True})
     return jsonify({'success': False})
@@ -25429,7 +25445,8 @@ def admin_assistants():
         
         # XP
         assistant['xp_points'] = assistant.get('xp_points', 0)
-        assistant['xp_due_date'] = assistant.get('xp_due_date', '')
+        xp_due = assistant.get('xp_due_date', '')
+        assistant['xp_due_date'] = xp_due.strftime('%Y-%m-%d') if hasattr(xp_due, 'strftime') else xp_due
         assistant['last_xp_granted'] = assistant.get('last_xp_granted', '')
     
     return render_template_string(ASSISTANTS_HTML,
@@ -27136,6 +27153,10 @@ def get_active_students():
     return query_all(
         "SELECT * FROM students WHERE status = 'active' ORDER BY name"
     )
+def get_protected_student_ids(limit=5):
+    """أول 5 طلاب مسجلين (الأقدم حسب id) - محميون من الحذف وتغيير الرتبة والتحويل لغير نشط"""
+    rows = query_all("SELECT id FROM students ORDER BY id ASC LIMIT 5")
+    return [row['id'] for row in rows][:limit]
 def get_student_stats(student_id):
     """الحصول على إحصائيات الطالب"""
     # عدد التقييمات
@@ -31703,7 +31724,7 @@ MANAGE_STUDENTS_HTML = '''
                             <td>{% if student.id in fixed_ids %}<span style="color:var(--gold);font-weight:700;">{{ student.rank }}</span>{% else %}<input type="number" name="rank_{{ student.id }}" value="{{ student.rank }}" style="width:50px;padding:3px 6px;border-radius:4px;border:1px solid var(--glass-border);background:rgba(255,255,255,0.04);color:#fff;font-family:inherit;text-align:center;" lang="en">{% endif %}</td>
                             <td><span class="status-badge status-{{ student.status }}">{% if student.status == 'active' %}✅ نشط{% elif student.status == 'inactive' %}⏸️ غير نشط{% else %}⏳ معلق{% endif %}</span></td>
                             <td><span class="status-badge status-{{ student.payment_status }}">{% if student.payment_status == 'paid' %}💰 مدفوع{% elif student.payment_status == 'pending' %}⏳ معلق{% else %}💳 غير مدفوع{% endif %}</span></td>
-                            <td><div class="action-buttons"><button type="button" class="btn btn-primary btn-xs" onclick="openEditModal('{{ student.id }}')">✏️</button><button type="button" class="btn btn-success btn-xs" onclick="toggleStatus('{{ student.id }}')">🔄</button><button type="button" class="btn btn-danger btn-xs" onclick="deleteStudent('{{ student.id }}')">🗑️</button><a href="{{ url_for('admin_view_student', student_id=student.id) }}" class="btn btn-outline btn-xs">👤</a></div></td>
+                            <td><div class="action-buttons"><button type="button" class="btn btn-primary btn-xs" onclick="openEditModal('{{ student.id }}')">✏️</button>{% if student.id in fixed_ids %}<button type="button" class="btn btn-success btn-xs" disabled title="محمي - أحد الطلاب الخمسة الأوائل" style="opacity:0.4;cursor:not-allowed;">🔄</button><button type="button" class="btn btn-danger btn-xs" disabled title="محمي - أحد الطلاب الخمسة الأوائل" style="opacity:0.4;cursor:not-allowed;">🗑️</button>{% else %}<button type="button" class="btn btn-success btn-xs" onclick="toggleStatus('{{ student.id }}')">🔄</button><button type="button" class="btn btn-danger btn-xs" onclick="deleteStudent('{{ student.id }}')">🗑️</button>{% endif %}<a href="{{ url_for('admin_view_student', student_id=student.id) }}" class="btn btn-outline btn-xs">👤</a></div></td>
                         </tr>
                         {% else %}
                         <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px 0;"><div style="font-size:40px;margin-bottom:10px;">📭</div>لا يوجد طلاب</td></tr>
@@ -50884,19 +50905,24 @@ def manage_students():
             if not student_id:
                 flash('طالب غير محدد', 'danger')
             else:
+                student_id = int(student_id)
+                protected_ids = get_protected_student_ids()
                 update_data = {
                     'name': name,
                     'phone': phone,
                     'parent_phone': parent_phone,
                     'address': address,
-                    'rank': int(rank),
-                    'status': status,
                     'payment_status': payment_status,
                     'notes': notes
                 }
+                if student_id in protected_ids:
+                    flash('تنبيه: لا يمكن تغيير رتبة أو تعطيل أحد الطلاب الخمسة الأوائل، تم تجاهل هذا التغيير', 'warning')
+                else:
+                    update_data['rank'] = int(rank)
+                    update_data['status'] = status
                 if password:
                     update_data['password'] = password
-                update_student(int(student_id), update_data)
+                update_student(student_id, update_data)
                 flash('تم تحديث بيانات الطالب بنجاح', 'success')
         else:
             flash('إجراء غير معروف', 'danger')
@@ -50904,7 +50930,7 @@ def manage_students():
         return redirect(url_for('manage_students'))
 
     students = get_all_students()
-    fixed_ids = [1]  # الطلاب المحميين من التعديل
+    fixed_ids = get_protected_student_ids()  # الطلاب المحميين من التعديل (أول 5 طلاب مسجلين)
     
     return render_template_string(MANAGE_STUDENTS_HTML, students=students, fixed_ids=fixed_ids)
 @app.route('/admin/students/toggle/<int:student_id>', methods=['POST'])
@@ -50914,6 +50940,8 @@ def toggle_student_status(student_id):
     student = get_student_by_id(student_id)
     if student:
         new_status = 'inactive' if student['status'] == 'active' else 'active'
+        if new_status == 'inactive' and student_id in get_protected_student_ids():
+            return jsonify({'success': False, 'message': 'لا يمكن تعطيل أحد الطلاب الخمسة الأوائل'}), 403
         update_student_status(student_id, new_status)
         return jsonify({'success': True})
     return jsonify({'success': False}), 404
@@ -50921,9 +50949,9 @@ def toggle_student_status(student_id):
 @login_required('admin')
 def delete_student_route(student_id):
     """حذف طالب"""
-    # منع حذف الطالب الافتراضي
-    if student_id == 1:
-        return jsonify({'success': False, 'message': 'لا يمكن حذف هذا الطالب'})
+    # منع حذف أول 5 طلاب مسجلين
+    if student_id in get_protected_student_ids():
+        return jsonify({'success': False, 'message': 'لا يمكن حذف أحد الطلاب الخمسة الأوائل'})
     
     delete_student(student_id)
     return jsonify({'success': True})
@@ -50942,7 +50970,10 @@ def bulk_student_action():
         for student_id in ids:
             update_student_status(student_id, 'active')
     elif action == 'deactivate':
+        protected_ids = get_protected_student_ids()
         for student_id in ids:
+            if int(student_id) in protected_ids:
+                continue
             update_student_status(student_id, 'inactive')
     else:
         return jsonify({'success': False, 'message': 'إجراء غير معروف'})
@@ -50957,6 +50988,8 @@ def update_student_rank():
     rank = data.get('rank')
     
     if student_id and rank is not None:
+        if int(student_id) in get_protected_student_ids():
+            return jsonify({'success': False, 'message': 'لا يمكن تغيير رتبة أحد الطلاب الخمسة الأوائل'})
         update_student(student_id, {'rank': rank})
         return jsonify({'success': True})
     return jsonify({'success': False})
@@ -51929,7 +51962,8 @@ def admin_assistants():
         
         # XP
         assistant['xp_points'] = assistant.get('xp_points', 0)
-        assistant['xp_due_date'] = assistant.get('xp_due_date', '')
+        xp_due = assistant.get('xp_due_date', '')
+        assistant['xp_due_date'] = xp_due.strftime('%Y-%m-%d') if hasattr(xp_due, 'strftime') else xp_due
         assistant['last_xp_granted'] = assistant.get('last_xp_granted', '')
     
     return render_template_string(ASSISTANTS_HTML,
