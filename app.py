@@ -373,115 +373,6 @@ def deduct_points(student_id, amount, reason):
         return False
     
     return add_points(student_id, amount, reason, 'spent')
-
-# ============================================================ #
-# ====== SECTION 5B: خصوصية الصدارة ومظهر الصفحات (اقتصاد XP) = #
-# ============================================================ #
-OWNER_ACCOUNT_EMAIL = 'yacinezaoui2010@gmail.com'
-PRIVACY_LOCK_COST = 2000
-PRIVACY_UNLOCK_COST = 1000
-PRIVACY_UNLOCK_VALID_HOURS = 24
-THEME_SINGLE_COLOR_COST = 250
-THEME_GRADIENT_COST = 500
-ALLOWED_THEME_COLORS = {
-    '#c9a227', '#e8c84a', '#1a7a8e', '#134e5e', '#8e24aa', '#3949ab',
-    '#00897b', '#d81b60', '#f4511e', '#5e35b1', '#00acc1', '#7cb342',
-    '#c62828', '#6d4c41', '#37474f', '#fdd835', '#1a1a3e', '#2a2a6e',
-}
-
-def get_owner_student():
-    """جلب حساب الطالب الذي تُحوَّل إليه نقاط عمليات الخصوصية والمظهر"""
-    return query_one("SELECT id FROM students WHERE email = %s", (OWNER_ACCOUNT_EMAIL,))
-
-def credit_owner_account(amount, reason):
-    """تحويل النقاط المدفوعة في عمليات الخصوصية/المظهر إلى حساب المالك"""
-    owner = get_owner_student()
-    if owner:
-        add_points(owner['id'], amount, reason, 'earned')
-
-def lock_student_privacy(student_id):
-    """تشفير معلومات الطالب (الاسم/النقاط/الشارات) في لوحة الصدارة - 2000 XP"""
-    student = query_one("SELECT points, privacy_locked FROM students WHERE id = ?", (student_id,))
-    if not student:
-        return False, 'الطالب غير موجود'
-    if student['privacy_locked']:
-        return False, 'معلوماتك مشفّرة بالفعل'
-    if student['points'] < PRIVACY_LOCK_COST:
-        return False, f'تحتاج {PRIVACY_LOCK_COST} نقطة XP لتشفير معلوماتك'
-    if not deduct_points(student_id, PRIVACY_LOCK_COST, 'تشفير معلومات الصدارة'):
-        return False, 'فشلت عملية خصم النقاط'
-    execute_query("UPDATE students SET privacy_locked = TRUE WHERE id = ?", (student_id,))
-    credit_owner_account(PRIVACY_LOCK_COST, f'تشفير طالب #{student_id} في الصدارة')
-    return True, 'تم تشفير معلوماتك في لوحة الصدارة 🔒'
-
-def unlock_own_privacy(student_id):
-    """إظهار معلوماتك الخاصة في الصدارة من جديد (مجاناً)"""
-    execute_query("UPDATE students SET privacy_locked = FALSE WHERE id = ?", (student_id,))
-    return True, 'تم إظهار معلوماتك في لوحة الصدارة'
-
-def has_active_privacy_unlock(viewer_id, target_id):
-    """التحقق مما إذا كان الطالب قد دفع مسبقاً لفك تشفير هذا الطالب خلال آخر 24 ساعة"""
-    row = query_one(f"""
-        SELECT id FROM privacy_unlocks
-        WHERE viewer_id = ? AND target_id = ?
-          AND unlocked_at > (NOW() - INTERVAL '{PRIVACY_UNLOCK_VALID_HOURS} hours')
-        ORDER BY unlocked_at DESC LIMIT 1
-    """, (viewer_id, target_id))
-    return row is not None
-
-def get_active_privacy_unlocks(viewer_id):
-    """جلب معرّفات الطلاب الذين لا يزال فك تشفيرهم سارياً بالنسبة لهذا المستخدم"""
-    rows = query_all(f"""
-        SELECT DISTINCT target_id FROM privacy_unlocks
-        WHERE viewer_id = ?
-          AND unlocked_at > (NOW() - INTERVAL '{PRIVACY_UNLOCK_VALID_HOURS} hours')
-    """, (viewer_id,))
-    return {r['target_id'] for r in rows}
-
-def unlock_other_student_privacy(viewer_id, target_id):
-    """دفع 1000 XP لفك تشفير معلومات طالب آخر لمدة 24 ساعة (تُدفع في كل مرة تنتهي فيها الصلاحية)"""
-    if viewer_id == target_id:
-        return False, 'لا حاجة لفك تشفير معلوماتك أنت'
-    target = query_one("SELECT privacy_locked FROM students WHERE id = ?", (target_id,))
-    if not target:
-        return False, 'الطالب غير موجود'
-    if not target['privacy_locked']:
-        return False, 'معلومات هذا الطالب غير مشفّرة أصلاً'
-    if has_active_privacy_unlock(viewer_id, target_id):
-        return True, 'معلوماته مفكوكة بالفعل لديك حالياً'
-    viewer = query_one("SELECT points FROM students WHERE id = ?", (viewer_id,))
-    if not viewer or viewer['points'] < PRIVACY_UNLOCK_COST:
-        return False, f'تحتاج {PRIVACY_UNLOCK_COST} نقطة XP لفك التشفير'
-    if not deduct_points(viewer_id, PRIVACY_UNLOCK_COST, f'فك تشفير طالب #{target_id} في الصدارة'):
-        return False, 'فشلت عملية خصم النقاط'
-    execute_query(
-        "INSERT INTO privacy_unlocks (viewer_id, target_id, unlocked_at) VALUES (?, ?, NOW())",
-        (viewer_id, target_id)
-    )
-    credit_owner_account(PRIVACY_UNLOCK_COST, f'فك تشفير طالب #{target_id} بواسطة طالب #{viewer_id}')
-    return True, f'تم فك التشفير لمدة {PRIVACY_UNLOCK_VALID_HOURS} ساعة ⏳'
-
-def set_student_theme(student_id, color1, color2=None):
-    """شراء لون واحد (250 XP) لكل صفحات الطالب، أو تدرج لونين (500 XP)"""
-    if not color1 or color1 not in ALLOWED_THEME_COLORS:
-        return False, 'لون غير صالح'
-    is_gradient = bool(color2)
-    if is_gradient and color2 not in ALLOWED_THEME_COLORS:
-        return False, 'لون التدرج الثاني غير صالح'
-    cost = THEME_GRADIENT_COST if is_gradient else THEME_SINGLE_COLOR_COST
-    student = query_one("SELECT points FROM students WHERE id = ?", (student_id,))
-    if not student or student['points'] < cost:
-        return False, f'تحتاج {cost} نقطة XP لهذه الميزة'
-    reason = 'شراء تدرج ألوان للصفحات' if is_gradient else 'شراء لون موحّد للصفحات'
-    if not deduct_points(student_id, cost, reason):
-        return False, 'فشلت عملية خصم النقاط'
-    execute_query(
-        "UPDATE students SET theme_color = ?, theme_color2 = ?, theme_gradient = ? WHERE id = ?",
-        (color1, color2 if is_gradient else None, is_gradient, student_id)
-    )
-    credit_owner_account(cost, f'شراء مظهر بواسطة طالب #{student_id}')
-    return True, 'تم تحديث ألوان صفحاتك 🎨'
-
 def run_monthly_xp_disbursement():
     """صرف تلقائي لـ 1000 نقطة XP لكل طالب نشط في بداية كل شهر جديد، دون تدخل المشرف"""
     current_month = datetime.now().strftime('%Y-%m')
@@ -791,14 +682,6 @@ def get_student_rank(student_id):
         AND status = 'active'
     """, (student_id,))
     return result['rank'] if result else 0
-def get_protected_student_ids():
-    """أول 5 طلاب تم قبولهم في الموقع — محميون من الحذف والتعطيل وتغيير الترتيب"""
-    rows = query_all("SELECT id FROM students ORDER BY id ASC LIMIT 5")
-    return [r['id'] for r in rows]
-
-def is_protected_student(student_id):
-    return int(student_id) in get_protected_student_ids()
-
 def update_student_status(student_id, status):
     """تحديث حالة الطالب"""
     execute_query(
@@ -1422,22 +1305,9 @@ def buy_book(student_id, book_id):
     student = get_student_by_id(student_id)
     if not student or student['points'] < book['price_points']:
         return False
-
-    # حد أقصى لعدد مرات بيع الكتاب (لكتب الطلاب مثلاً 5 نسخ فقط)
-    if book.get('max_sales'):
-        sold_count = query_one(
-            "SELECT COUNT(*) as count FROM book_purchases WHERE book_id = ?",
-            (book_id,)
-        )['count']
-        if sold_count >= book['max_sales']:
-            return False
     
     # خصم النقاط
     deduct_points(student_id, book['price_points'], f"شراء كتاب: {book['title']}")
-    
-    # تحويل النقاط إلى الطالب البائع (إن وُجد)
-    if book.get('seller_student_id'):
-        add_points(book['seller_student_id'], book['price_points'], f"بيع كتاب: {book['title']}", 'earned')
     
     # تقليل الكمية
     execute_query(
@@ -1461,19 +1331,84 @@ def get_student_purchases(student_id):
         WHERE bp.student_id = ?
         ORDER BY bp.created_at DESC
     """, (student_id,))
+
+# ============================================================ #
+# ================= متجر الألوان (ثيمات الواجهة) ============= #
+# ============================================================ #
+STORE_COLORS = [
+    {'id': 'gold',   'name': 'ذهبي (الافتراضي)', 'hex': '#c9a227', 'price': 0},
+    {'id': 'emerald','name': 'زمردي',             'hex': '#10b981', 'price': 150},
+    {'id': 'sapphire','name': 'أزرق ياقوتي',       'hex': '#2563eb', 'price': 150},
+    {'id': 'ruby',   'name': 'أحمر ياقوتي',        'hex': '#dc2626', 'price': 150},
+    {'id': 'amethyst','name': 'بنفسجي جوهري',      'hex': '#7c3aed', 'price': 200},
+    {'id': 'rose',   'name': 'وردي',               'hex': '#e11d48', 'price': 200},
+    {'id': 'teal',   'name': 'فيروزي',              'hex': '#0d9488', 'price': 200},
+    {'id': 'sunset', 'name': 'برتقالي غروب',        'hex': '#ea580c', 'price': 250},
+]
+
+def get_owned_color_ids(student):
+    """قائمة معرّفات الألوان التي يملكها الطالب (اللون الافتراضي مملوك دائماً)"""
+    owned = (student.get('owned_theme_colors') or '') if student else ''
+    ids = [c.strip() for c in owned.split(',') if c.strip()]
+    if 'gold' not in ids:
+        ids.append('gold')
+    return ids
+
+def buy_theme_color(student_id, color_id):
+    """شراء لون واجهة من المتجر وتفعيله مباشرة"""
+    color = next((c for c in STORE_COLORS if c['id'] == color_id), None)
+    if not color:
+        return False, 'اللون غير موجود'
+
+    student = get_student_by_id(student_id)
+    if not student:
+        return False, 'الطالب غير موجود'
+
+    owned_ids = get_owned_color_ids(student)
+
+    if color_id in owned_ids:
+        # يملكه مسبقاً: فقط نفعّله بدون خصم نقاط
+        execute_query("UPDATE students SET theme_color = ? WHERE id = ?", (color['hex'], student_id))
+        return True, 'تم تفعيل اللون'
+
+    if student['points'] < color['price']:
+        return False, 'نقاط غير كافية'
+
+    if color['price'] > 0:
+        deduct_points(student_id, color['price'], f"شراء لون واجهة: {color['name']}")
+
+    owned_ids.append(color_id)
+    execute_query(
+        "UPDATE students SET theme_color = ?, owned_theme_colors = ? WHERE id = ?",
+        (color['hex'], ','.join(owned_ids), student_id)
+    )
+    return True, 'تم شراء اللون وتفعيله'
+
+def set_active_theme_color(student_id, color_id):
+    """تفعيل لون مملوك مسبقاً دون شراء (بما فيه العودة للون الافتراضي)"""
+    color = next((c for c in STORE_COLORS if c['id'] == color_id), None)
+    if not color:
+        return False
+    student = get_student_by_id(student_id)
+    if not student:
+        return False
+    owned_ids = get_owned_color_ids(student)
+    if color_id not in owned_ids:
+        return False
+    execute_query("UPDATE students SET theme_color = ? WHERE id = ?", (color['hex'], student_id))
+    return True
+
 def create_book_offer(data):
     """إنشاء عرض بيع كتاب من طالب"""
     return execute_query("""
-        INSERT INTO book_offers (student_id, title, author, description, price_points, cover_url, pdf_url, status)
-        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
+        INSERT INTO book_offers (student_id, title, author, description, price_points, status)
+        VALUES (?, ?, ?, ?, ?, 'pending')
     """, (
         data['student_id'],
         data['title'],
         data.get('author', ''),
         data.get('description', ''),
-        data.get('price_points', 10),
-        data.get('cover_url', ''),
-        data.get('pdf_url', '')
+        data.get('price_points', 10)
     ))
 def get_pending_offers():
     """الحصول على عروض البيع المعلقة"""
@@ -1502,15 +1437,11 @@ def approve_offer(offer_id, final_price=None):
         'author': offer['author'],
         'description': offer['description'],
         'price_points': final_price or offer['price_points'],
-        'quantity': 5,
-        'cover_url': offer.get('cover_url') or '',
-        'pdf_url': offer.get('pdf_url') or '',
+        'quantity': 1,
         'seller_student_id': offer['student_id'],
         'active': 1
     }
     book_id = create_book(book_data)
-    # حد أقصى 5 نسخ تُباع من كل كتاب يعرضه طالب
-    execute_query("UPDATE books SET max_sales = 5 WHERE id = ?", (book_id,))
     
     # تحديث حالة العرض
     execute_query(
@@ -2140,7 +2071,6 @@ ADMIN_VIEW_STUDENT_HTML = '''
 </div>  <!-- ✅ نهاية .container -->
 </body>
 </html>
-'''
 init_db()
 # ============================================================ #
 # ====== الصفحة 1: الصفحة الرئيسية (HOME) ==================== #
@@ -3333,46 +3263,25 @@ LEADERBOARD_HTML = '''
     {% if top_students|length >= 3 %}
     <div class="podium" id="podium">
         {% set top3 = top_students[:3] %}
-        <div class="podium-item second" {% if not top3[1].is_locked %}onclick="showStudentProfile('{{ top3[1].id }}')"{% endif %}>
+        <div class="podium-item second" onclick="showStudentProfile('{{ top3[1].id }}')">
             <span class="medal">🥈</span>
-            {% if top3[1].is_locked %}
-            <div class="avatar silver">🔒</div>
-            <div class="name">🔒 مشفّر</div>
-            <div class="points">🔒🔒🔒</div>
-            {% if viewer_id %}<button class="btn btn-gold btn-sm" onclick="event.stopPropagation(); decryptStudent({{ top3[1].id }})">🔓 فك (1000 XP)</button>{% endif %}
-            {% else %}
             <div class="avatar silver">{{ top3[1].name[0]|upper }}</div>
             <div class="name">{{ top3[1].name }}</div>
             <div class="points">{{ top3[1].points|default(0, true) }} نقطة</div>
-            {% endif %}
             <div class="position">المركز الثاني</div>
         </div>
-        <div class="podium-item first" {% if not top3[0].is_locked %}onclick="showStudentProfile('{{ top3[0].id }}')"{% endif %}>
+        <div class="podium-item first" onclick="showStudentProfile('{{ top3[0].id }}')">
             <span class="medal">🥇</span>
-            {% if top3[0].is_locked %}
-            <div class="avatar gold">🔒</div>
-            <div class="name">🔒 مشفّر</div>
-            <div class="points">🔒🔒🔒</div>
-            {% if viewer_id %}<button class="btn btn-gold btn-sm" onclick="event.stopPropagation(); decryptStudent({{ top3[0].id }})">🔓 فك (1000 XP)</button>{% endif %}
-            {% else %}
             <div class="avatar gold">{{ top3[0].name[0]|upper }}</div>
             <div class="name">{{ top3[0].name }}</div>
             <div class="points">{{ top3[0].points|default(0, true) }} نقطة</div>
-            {% endif %}
             <div class="position">🏆 البطل</div>
         </div>
-        <div class="podium-item third" {% if not top3[2].is_locked %}onclick="showStudentProfile('{{ top3[2].id }}')"{% endif %}>
+        <div class="podium-item third" onclick="showStudentProfile('{{ top3[2].id }}')">
             <span class="medal">🥉</span>
-            {% if top3[2].is_locked %}
-            <div class="avatar bronze">🔒</div>
-            <div class="name">🔒 مشفّر</div>
-            <div class="points">🔒🔒🔒</div>
-            {% if viewer_id %}<button class="btn btn-gold btn-sm" onclick="event.stopPropagation(); decryptStudent({{ top3[2].id }})">🔓 فك (1000 XP)</button>{% endif %}
-            {% else %}
             <div class="avatar bronze">{{ top3[2].name[0]|upper }}</div>
             <div class="name">{{ top3[2].name }}</div>
             <div class="points">{{ top3[2].points|default(0, true) }} نقطة</div>
-            {% endif %}
             <div class="position">المركز الثالث</div>
         </div>
     </div>
@@ -3391,19 +3300,12 @@ LEADERBOARD_HTML = '''
         <div class="leaderboard-header"><div class="rank">#</div><div class="name">👤 الطالب</div><div class="points">⭐ النقاط</div><div class="badges">🏅 الشارات</div><div class="change">📈 التغيير</div></div>
         <div id="leaderboardRows">
             {% for student in top_students %}
-            <div class="leaderboard-row" data-rank="{{ loop.index }}" {% if not student.is_locked %}onclick="showStudentProfile('{{ student.id }}')"{% endif %} style="{% if student.theme_gradient and student.theme_color and student.theme_color2 %}background: linear-gradient(135deg, {{ student.theme_color }}33, {{ student.theme_color2 }}33);{% elif student.theme_color %}background: {{ student.theme_color }}22;{% endif %}">
+            <div class="leaderboard-row" data-rank="{{ loop.index }}" onclick="showStudentProfile('{{ student.id }}')">
                 <div class="rank">{% if loop.index == 1 %}<span class="medal">🥇</span>{% elif loop.index == 2 %}<span class="medal">🥈</span>{% elif loop.index == 3 %}<span class="medal">🥉</span>{% else %}<span class="num">{{ loop.index }}</span>{% endif %}</div>
-                {% if student.is_locked %}
-                <div class="name"><div class="avatar">🔒</div><div><div class="full-name">🔒 معلومات مشفّرة</div><div class="sub-info">محمي بواسطة الطالب</div></div></div>
-                <div class="points">🔒</div>
-                <div class="badges"><span class="empty">🔒</span></div>
-                <div class="change">{% if viewer_id %}<button class="btn btn-gold btn-sm" onclick="event.stopPropagation(); decryptStudent({{ student.id }})">🔓 فك (1000 XP)</button>{% else %}—{% endif %}</div>
-                {% else %}
-                <div class="name"><div class="avatar {% if loop.index == 1 %}gold{% elif loop.index == 2 %}silver{% elif loop.index == 3 %}bronze{% endif %}">{{ student.name[0]|upper }}</div><div><div class="full-name">{{ student.name }}{% if student.is_self and student.privacy_locked %} 🔒{% endif %}</div><div class="sub-info">📚 {{ student.rank|default(0, true) }} مستوى</div></div></div>
+                <div class="name"><div class="avatar {% if loop.index == 1 %}gold{% elif loop.index == 2 %}silver{% elif loop.index == 3 %}bronze{% endif %}">{{ student.name[0]|upper }}</div><div><div class="full-name">{{ student.name }}</div><div class="sub-info">📚 {{ student.rank|default(0, true) }} مستوى</div></div></div>
                 <div class="points">{{ student.points|default(0, true) }}</div>
                 <div class="badges">{% if loop.index <= 3 %}🏅🌟⭐{% elif loop.index <= 10 %}🏅🌟{% elif loop.index <= 25 %}🏅{% else %}<span class="empty">—</span>{% endif %}</div>
                 <div class="change {% if loop.index <= 3 %}up{% elif loop.index <= 5 %}down{% else %}same{% endif %}">{% if loop.index <= 3 %}↑ +{{ 5 - loop.index + 1 }}{% elif loop.index <= 5 %}↓ -{{ loop.index - 3 }}{% else %}—{% endif %}</div>
-                {% endif %}
             </div>
             {% else %}
             <div style="text-align:center;padding:40px 0;color:var(--text-muted);"><div style="font-size:48px;margin-bottom:12px;">📊</div><div>لا يوجد طلاب لعرضهم بعد</div></div>
@@ -3452,13 +3354,6 @@ function searchStudent(query) {
     });
 }
 function showStudentProfile(studentId) { alert('سيتم عرض ملف الطالب رقم: ' + studentId); }
-function decryptStudent(id) {
-    if (!confirm('سيتم خصم 1000 نقطة XP لفك تشفير معلومات هذا الطالب لمدة 24 ساعة. متابعة؟')) return;
-    fetch('/student/privacy/decrypt/' + id, { method: 'POST' })
-        .then(r => r.json())
-        .then(data => { alert(data.message); if (data.success) location.reload(); })
-        .catch(() => alert('حدث خطأ في الاتصال بالخادم'));
-}
 function exportLeaderboard() {
     let text = '🏆 لوحة الصدارة - حلقتي زتاي\\n' + '='.repeat(40) + '\\n\\n';
     document.querySelectorAll('.leaderboard-row[style*="display: grid"]').forEach((row, index) => {
@@ -5296,7 +5191,7 @@ MANAGE_STUDENTS_HTML = '''
                             <td>{% if student.id in fixed_ids %}<span style="color:var(--gold);font-weight:700;">{{ student.rank }}</span>{% else %}<input type="number" name="rank_{{ student.id }}" value="{{ student.rank }}" style="width:50px;padding:3px 6px;border-radius:4px;border:1px solid var(--glass-border);background:rgba(255,255,255,0.04);color:#fff;font-family:inherit;text-align:center;" lang="en">{% endif %}</td>
                             <td><span class="status-badge status-{{ student.status }}">{% if student.status == 'active' %}✅ نشط{% elif student.status == 'inactive' %}⏸️ غير نشط{% else %}⏳ معلق{% endif %}</span></td>
                             <td><span class="status-badge status-{{ student.payment_status }}">{% if student.payment_status == 'paid' %}💰 مدفوع{% elif student.payment_status == 'pending' %}⏳ معلق{% else %}💳 غير مدفوع{% endif %}</span></td>
-                            <td><div class="action-buttons"><button type="button" class="btn btn-primary btn-xs" onclick="openEditModal('{{ student.id }}')">✏️</button>{% if student.id not in fixed_ids %}<button type="button" class="btn btn-success btn-xs" onclick="toggleStatus('{{ student.id }}')">🔄</button><button type="button" class="btn btn-danger btn-xs" onclick="deleteStudent('{{ student.id }}')">🗑️</button>{% endif %}<a href="{{ url_for('admin_view_student', student_id=student.id) }}" class="btn btn-outline btn-xs">👤</a></div></td>
+                            <td><div class="action-buttons"><button type="button" class="btn btn-primary btn-xs" onclick="openEditModal('{{ student.id }}')">✏️</button><button type="button" class="btn btn-success btn-xs" onclick="toggleStatus('{{ student.id }}')">🔄</button><button type="button" class="btn btn-danger btn-xs" onclick="deleteStudent('{{ student.id }}')">🗑️</button><a href="{{ url_for('admin_view_student', student_id=student.id) }}" class="btn btn-outline btn-xs">👤</a></div></td>
                         </tr>
                         {% else %}
                         <tr><td colspan="9" style="text-align:center;color:var(--text-muted);padding:30px 0;"><div style="font-size:40px;margin-bottom:10px;">📭</div>لا يوجد طلاب</td></tr>
@@ -5837,9 +5732,9 @@ setInterval(() => {
             if (data.new_count > 0) { showToast('info', '🔔 طلب جديد', 'يوجد ' + data.new_count + ' طلب تسجيل جديد'); playNotificationSound(); document.getElementById('pendingCount').textContent = data.pending_count + ' معلق'; }
         })
         .catch(() => {});
-}, 30000);
+}, 1000);
 console.log('📝 طلبات التسجيل جاهزة');
-console.log('🔔 تحديث تلقائي كل 30 ثانية');
+console.log('🔔 تحديث تلقائي كل ثانية');
 </script>
 </body>
 </html>
@@ -13050,7 +12945,16 @@ MESSAGES_HTML = '''
                 });
         }
 
-        function addMessageToChat(message, type, msgId, status) {
+        function buildFileAttachmentHtml(fileUrl) {
+            if (!fileUrl) return '';
+            const isAudio = /\.(webm|mp3|wav|m4a|ogg)(\?|$)/i.test(fileUrl);
+            if (isAudio) {
+                return '<div class="file-attachment"><audio controls src="' + fileUrl + '" style="max-width:220px;height:36px;"></audio></div>';
+            }
+            return '<div class="file-attachment">📎 <a href="' + fileUrl + '" target="_blank" rel="noopener">تحميل المرفق</a></div>';
+        }
+
+        function addMessageToChat(message, type, msgId, status, fileUrl) {
             const container = document.getElementById('messagesContainer');
             const empty = container.querySelector('.empty-chat');
             if (empty) empty.remove();
@@ -13069,6 +12973,7 @@ MESSAGES_HTML = '''
 
             div.innerHTML = `
                         <div class="bubble">${message}</div>
+                        ${buildFileAttachmentHtml(fileUrl)}
                         <div class="footer">
                             <span class="time">${new Date().toLocaleTimeString('ar-SA', {hour:'2-digit', minute:'2-digit'})}</span>
                             <span class="status-icon ${statusClass}">${statusIcon}</span>
@@ -13140,7 +13045,7 @@ MESSAGES_HTML = '''
                     .then(function(data) {
                         if (data.success) {
                             showToast('success', '✅ تم', 'تم رفع الملف وإرساله');
-                            addMessageToChat('📎 ' + file.name + ' (تم الرفع)', 'sent', null, 'delivered');
+                            addMessageToChat('📎 ملف مرفق: ' + file.name, 'sent', null, 'delivered', data.file_url);
                         } else {
                             showToast('error', '❌ خطأ', data.message || 'حدث خطأ');
                         }
@@ -13170,10 +13075,11 @@ MESSAGES_HTML = '''
                 .then(function(data) {
                     if (data.success && data.new_messages && data.new_messages.length > 0) {
                         data.new_messages.forEach(function(msg) {
-                            addMessageToChat(msg.message, 'received', msg.id, '');
+                            addMessageToChat(msg.message, 'received', msg.id, '', msg.file_url);
                             markMessageAsRead(msg.id);
                         });
                         updateUnreadCount();
+                        updateContactList();
                     }
 
                     if (data.read_updates && data.read_updates.length > 0) {
@@ -13222,6 +13128,19 @@ MESSAGES_HTML = '''
                     const badge = document.getElementById('unreadCount');
                     badge.textContent = data.count + ' غير مقروء';
                     badge.className = 'badge-count' + (data.count === 0 ? ' zero' : '');
+                })
+                .catch(function() {
+                    // silent fail
+                });
+        }
+
+        function updateContactList() {
+            fetch('/admin/messages/contacts')
+                .then(function(r) {
+                    return r.json();
+                })
+                .then(function(data) {
+                    // تحديث القائمة الجانبية
                 })
                 .catch(function() {
                     // silent fail
@@ -13309,7 +13228,7 @@ MESSAGES_HTML = '''
 
             pollingInterval = setInterval(function() {
                 checkNewMessages();
-            }, 30000);
+            }, 1000);
         }
 
         updateUnreadCount();
@@ -14598,12 +14517,7 @@ ADMIN_STORE_HTML = '''
                             <tr>
                                 <td>{{ offer.id }}</td>
                                 <td>{{ offer.student_name }}</td>
-                                <td style="text-align:right;font-weight:600;">
-                                    {{ offer.title }}
-                                    {% if offer.pdf_url %}
-                                    <a href="{{ offer.pdf_url }}" target="_blank" style="margin-inline-start:6px;font-size:11px;">📄 معاينة</a>
-                                    {% endif %}
-                                </td>
+                                <td style="text-align:right;font-weight:600;">{{ offer.title }}</td>
                                 <td>{{ offer.author or '—' }}</td>
                                 <td>{{ offer.price_points }} نقطة</td>
                                 <td>{{ offer.created_at|fmtdt if offer.created_at else '—' }}</td>
@@ -15136,16 +15050,11 @@ STUDENT_DASHBOARD_HTML = '''
             .quick-actions { grid-template-columns: 1fr; }
         }
     </style>
-    {% if student.theme_color %}
-    <style>
-        :root {
-            --gold: {{ student.theme_color }} !important;
-            --gold-light: {{ student.theme_color2 if student.theme_gradient and student.theme_color2 else student.theme_color }} !important;
-        }
-    </style>
-    {% endif %}
 </head>
 <body>
+    {% if student and student.theme_color %}
+    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
@@ -15967,6 +15876,9 @@ ASSISTANT_DASHBOARD_HTML = '''
 </head>
 
 <body>
+    {% if student and student.theme_color %}
+    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -16561,16 +16473,11 @@ STUDENT_PROFILE_HTML = '''
             .badges-grid { justify-content: center; }
         }
     </style>
-    {% if student.theme_color %}
-    <style>
-        :root {
-            --gold: {{ student.theme_color }} !important;
-            --gold-light: {{ student.theme_color2 if student.theme_gradient and student.theme_color2 else student.theme_color }} !important;
-        }
-    </style>
-    {% endif %}
 </head>
 <body>
+    {% if student and student.theme_color %}
+    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
@@ -16617,35 +16524,6 @@ STUDENT_PROFILE_HTML = '''
             {% endfor %}
         </div>
     </div>
-    <div class="badges-section">
-        <h3>🔐 الخصوصية في الصدارة</h3>
-        <div style="font-size:14px;color:var(--text-secondary);margin-bottom:10px;">
-            {% if student.privacy_locked %}معلوماتك مشفّرة حالياً في لوحة الصدارة 🔒 (لا يراها أحد إلا من يدفع لفك تشفيرها){% else %}معلوماتك ظاهرة حالياً بشكل طبيعي في لوحة الصدارة{% endif %}
-        </div>
-        {% if student.privacy_locked %}
-        <button class="btn btn-outline btn-sm" onclick="unlockPrivacy()">👁️ إظهار معلوماتي من جديد (مجاناً)</button>
-        {% else %}
-        <button class="btn btn-gold btn-sm" onclick="lockPrivacy()">🔒 تشفير معلوماتي في الصدارة (2000 XP)</button>
-        {% endif %}
-    </div>
-    <div class="badges-section">
-        <h3>🎨 مظهر صفحاتي</h3>
-        <div style="font-size:14px;color:var(--text-secondary);margin-bottom:10px;">
-            اللون الحالي:
-            <span style="display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:middle;background:{{ student.theme_color or '#c9a227' }};"></span>
-            {% if student.theme_gradient and student.theme_color2 %} + <span style="display:inline-block;width:14px;height:14px;border-radius:4px;vertical-align:middle;background:{{ student.theme_color2 }};"></span> (تدرج){% endif %}
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;" id="colorSwatches">
-            {% for c in ['#c9a227','#e8c84a','#1a7a8e','#134e5e','#8e24aa','#3949ab','#00897b','#d81b60','#f4511e','#5e35b1','#00acc1','#7cb342','#c62828','#6d4c41','#37474f','#fdd835'] %}
-            <div class="color-swatch" data-color="{{ c }}" onclick="pickColor(this)" style="width:28px;height:28px;border-radius:7px;cursor:pointer;border:2px solid transparent;background:{{ c }};"></div>
-            {% endfor %}
-        </div>
-        <div style="display:flex;gap:10px;flex-wrap:wrap;">
-            <button class="btn btn-gold btn-sm" onclick="buyTheme(false)">🎨 اعتماد لون واحد (250 XP)</button>
-            <button class="btn btn-gold btn-sm" onclick="buyTheme(true)">🌈 دمج لونين بالتدرج (500 XP)</button>
-        </div>
-        <div class="hint" style="margin-top:8px;">اختر لوناً واحداً من الأعلى لشراء "لون واحد"، أو لوّنين لشراء "تدرج". يُطبَّق على صفحاتك.</div>
-    </div>
 </div>
 <div class="toast" id="toast"><div class="title" id="toastTitle">✅ تم</div><div class="message" id="toastMessage">تم تنفيذ العملية بنجاح</div></div>
 <script>
@@ -16672,48 +16550,6 @@ function showToast(type, title, message) {
     document.getElementById('toastMessage').textContent = message;
     clearTimeout(toast._timeout);
     toast._timeout = setTimeout(() => { toast.classList.remove('show'); }, 4000);
-}
-let selectedThemeColors = [];
-function pickColor(el) {
-    const color = el.dataset.color;
-    const idx = selectedThemeColors.indexOf(color);
-    if (idx > -1) {
-        selectedThemeColors.splice(idx, 1);
-        el.style.borderColor = 'transparent';
-        return;
-    }
-    if (selectedThemeColors.length >= 2) {
-        const removed = selectedThemeColors.shift();
-        document.querySelectorAll('.color-swatch').forEach(s => { if (s.dataset.color === removed) s.style.borderColor = 'transparent'; });
-    }
-    selectedThemeColors.push(color);
-    el.style.borderColor = '#fff';
-}
-function lockPrivacy() {
-    if (!confirm('سيتم خصم 2000 نقطة XP لتشفير معلوماتك في لوحة الصدارة. متابعة؟')) return;
-    fetch('/student/privacy/lock', { method: 'POST' })
-        .then(r => r.json())
-        .then(data => { showToast(data.success ? 'success' : 'error', data.success ? '✅ تم' : '❌ خطأ', data.message); if (data.success) setTimeout(() => location.reload(), 1200); })
-        .catch(() => showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال بالخادم'));
-}
-function unlockPrivacy() {
-    fetch('/student/privacy/unlock_self', { method: 'POST' })
-        .then(r => r.json())
-        .then(data => { showToast(data.success ? 'success' : 'error', data.success ? '✅ تم' : '❌ خطأ', data.message); if (data.success) setTimeout(() => location.reload(), 1200); })
-        .catch(() => showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال بالخادم'));
-}
-function buyTheme(isGradient) {
-    if (isGradient && selectedThemeColors.length !== 2) { showToast('error', '❌ خطأ', 'اختر لونين بالضبط لتفعيل التدرج'); return; }
-    if (!isGradient && selectedThemeColors.length < 1) { showToast('error', '❌ خطأ', 'اختر لوناً واحداً على الأقل'); return; }
-    const cost = isGradient ? 500 : 250;
-    if (!confirm('سيتم خصم ' + cost + ' نقطة XP. متابعة؟')) return;
-    const formData = new FormData();
-    formData.append('color1', selectedThemeColors[0]);
-    if (isGradient) formData.append('color2', selectedThemeColors[1]);
-    fetch('/student/theme/update', { method: 'POST', body: formData })
-        .then(r => r.json())
-        .then(data => { showToast(data.success ? 'success' : 'error', data.success ? '✅ تم' : '❌ خطأ', data.message); if (data.success) setTimeout(() => location.reload(), 1200); })
-        .catch(() => showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال بالخادم'));
 }
 console.log('👤 ملف الطالب جاهز');
 console.log('🏅 عرض الشارات: ' + ({{ badges|length }} || 0));
@@ -17317,6 +17153,9 @@ STUDENT_REPORT_HTML = '''
 </head>
 
 <body>
+    {% if student and student.theme_color %}
+    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -18575,6 +18414,9 @@ STUDENT_HOMEWORK_HTML = '''
 </head>
 
 <body>
+    {% if student and student.theme_color %}
+    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -19686,6 +19528,9 @@ STUDENT_COMPETITIONS_HTML = '''
 </head>
 
 <body>
+    {% if student and student.theme_color %}
+    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -20190,6 +20035,9 @@ STUDENT_GAMIFICATION_HTML = '''
     </style>
 </head>
 <body>
+    {% if student and student.theme_color %}
+    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
@@ -21007,6 +20855,9 @@ STUDENT_MESSAGES_HTML = '''
 </head>
 
 <body>
+    {% if student and student.theme_color %}
+    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -21380,7 +21231,16 @@ STUDENT_MESSAGES_HTML = '''
                 });
         }
 
-        function addMessageToChat(message, type, msgId, status, datetime) {
+        function buildFileAttachmentHtml(fileUrl) {
+            if (!fileUrl) return '';
+            const isAudio = /\.(webm|mp3|wav|m4a|ogg)(\?|$)/i.test(fileUrl);
+            if (isAudio) {
+                return '<div class="file-attachment"><audio controls src="' + fileUrl + '" style="max-width:220px;height:36px;"></audio></div>';
+            }
+            return '<div class="file-attachment">📎 <a href="' + fileUrl + '" target="_blank" rel="noopener">تحميل المرفق</a></div>';
+        }
+
+        function addMessageToChat(message, type, msgId, status, datetime, fileUrl) {
             const container = document.getElementById('messagesContainer');
             const empty = container.querySelector('.empty-chat');
             if (empty) empty.remove();
@@ -21426,6 +21286,7 @@ STUDENT_MESSAGES_HTML = '''
 
             div.innerHTML = `
                         <div class="bubble">${message}</div>
+                        ${buildFileAttachmentHtml(fileUrl)}
                         <div class="footer">
                             <span class="time">${timeDisplay}</span>
                             <span class="full-date">${dateDisplay}</span>
@@ -21494,6 +21355,15 @@ STUDENT_MESSAGES_HTML = '''
                     .then(function(data) {
                         if (data.success) {
                             updateMessageStatus(tempId, 'delivered', data.message_id);
+                            const msgDiv = document.querySelector('.message[data-msg-id="' + (data.message_id || tempId) + '"]');
+                            if (msgDiv && data.file_url) {
+                                const bubble = msgDiv.querySelector('.bubble');
+                                if (bubble) bubble.textContent = '📎 ملف مرفق: ' + file.name;
+                                const footer = msgDiv.querySelector('.footer');
+                                if (footer && !msgDiv.querySelector('.file-attachment')) {
+                                    footer.insertAdjacentHTML('beforebegin', buildFileAttachmentHtml(data.file_url));
+                                }
+                            }
                             showToast('success', '✅ تم', 'تم رفع الملف وإرساله');
                         } else {
                             updateMessageStatus(tempId, 'error');
@@ -21591,7 +21461,12 @@ STUDENT_MESSAGES_HTML = '''
          * ==========================================
          */
         function openVideoCallModal(contactId) {
-            var roomName = 'HalaqaCall_user_' + [String(contactId), String(selectedContact)].sort().join('_');
+            // مع المشرف: نفس مخطط تسمية الغرفة المستعمل في صفحة المشرف (HalaqaCall_user_<معرف الطالب>)
+            // مع طالب آخر: معرّف الغرفة يُبنى من الرقمين مرتبين تصاعدياً حتى يتفق الطرفان على نفس الاسم
+            var myId = '{{ student_id }}';
+            var roomName = (selectedContactType === 'admin')
+                ? ('HalaqaCall_user_' + myId)
+                : ('HalaqaCall_user_' + [String(contactId), String(myId)].sort().join('_'));
             var container = document.getElementById('videoCallContainer');
             container.innerHTML = '<iframe src="https://meet.jit.si/' + encodeURIComponent(roomName) +
                 '" allow="camera; microphone; fullscreen; display-capture; autoplay" style="width:100%;height:100%;border:0;"></iframe>';
@@ -21632,10 +21507,11 @@ STUDENT_MESSAGES_HTML = '''
                                 }),
                                 date_short: (msgDate.getDate()) + '/' + (msgDate.getMonth()+1) + '/' + msgDate.getFullYear()
                             };
-                            addMessageToChat(msg.message, 'received', msg.id, '', datetime);
+                            addMessageToChat(msg.message, 'received', msg.id, '', datetime, msg.file_url);
                             markMessageAsRead(msg.id);
                         });
                         updateUnreadCount();
+                        updateContactList();
                     }
 
                     // تحديث حالة الرسائل المرسلة إلى مقروءة (✔️✔️)
@@ -21683,6 +21559,17 @@ STUDENT_MESSAGES_HTML = '''
                     const badge = document.getElementById('unreadCount');
                     badge.textContent = data.count + ' غير مقروء';
                     badge.className = 'badge-count' + (data.count === 0 ? ' zero' : '');
+                })
+                .catch(function() {
+                    // silent fail
+                });
+        }
+
+        function updateContactList() {
+            fetch('/student/messages/contacts')
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    // تحديث القائمة الجانبية
                 })
                 .catch(function() {
                     // silent fail
@@ -21759,7 +21646,7 @@ STUDENT_MESSAGES_HTML = '''
 
             pollingInterval = setInterval(function() {
                 checkNewMessages();
-            }, 30000);
+            }, 1000);
         }
 
         updateUnreadCount();
@@ -21972,6 +21859,9 @@ STUDENT_POINTS_HTML = '''
     </style>
 </head>
 <body>
+    {% if student and student.theme_color %}
+    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
@@ -22776,6 +22666,9 @@ STUDENT_STORE_HTML = '''
 </head>
 
 <body>
+    {% if student and student.theme_color %}
+    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -22811,8 +22704,30 @@ STUDENT_STORE_HTML = '''
         <!-- ===== التبويبات ===== -->
         <div class="tabs">
             <button class="tab active" onclick="switchTab('books', this)">📚 الكتب</button>
+            <button class="tab" onclick="switchTab('colors', this)">🎨 الألوان</button>
             <button class="tab" onclick="switchTab('sell', this)">💰 بيع كتاب</button>
             <button class="tab" onclick="switchTab('library', this)">📖 مكتبتي</button>
+        </div>
+
+        <!-- ===== تبويب الألوان ===== -->
+        <div class="tab-content" id="tab-colors">
+            <div class="books-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px;">
+                {% for color in store_colors %}
+                <div class="book-card" style="text-align:center;padding:16px;">
+                    <div style="width:60px;height:60px;border-radius:50%;margin:0 auto 10px;background:{{ color.hex }};border:3px solid rgba(255,255,255,0.25);box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
+                    <div class="title">{{ color.name }}</div>
+                    {% if student and student.theme_color == color.hex %}
+                    <div class="price" style="color:#4ade80;">✅ مُفعّل حالياً</div>
+                    {% elif color.id in owned_color_ids %}
+                    <div class="price">تملكه بالفعل</div>
+                    <button class="btn btn-primary btn-sm" onclick="activateColor('{{ color.id }}')" style="margin-top:8px;width:100%;">تفعيل</button>
+                    {% else %}
+                    <div class="price">{{ color.price }} نقطة</div>
+                    <button class="btn btn-primary btn-sm" onclick="buyColor('{{ color.id }}')" style="margin-top:8px;width:100%;">شراء وتفعيل</button>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
         </div>
 
         <!-- ===== التبويب 1: الكتب ===== -->
@@ -22899,23 +22814,6 @@ STUDENT_STORE_HTML = '''
                         </div>
                     </div>
 
-                    <!-- رفع ملف الكتاب PDF -->
-                    <div class="form-group">
-                        <label>📄 ملف الكتاب (PDF) <span class="required">*</span></label>
-                        <div class="file-upload-area" id="pdfUploadArea">
-                            <div class="upload-icon">📄</div>
-                            <div class="upload-text">انقر لاختيار ملف الكتاب</div>
-                            <div class="upload-sub">PDF فقط</div>
-                            <input type="file" name="pdf_file" id="pdfFileInput" accept=".pdf" required onchange="handleFileSelect(this, 'pdf')">
-                        </div>
-                        <div class="file-preview" id="pdfPreview">
-                            <span class="file-icon">📄</span>
-                            <span class="file-name" id="pdfFileName">اسم الملف</span>
-                            <span class="file-size" id="pdfFileSize">0 KB</span>
-                            <button type="button" class="remove-file" onclick="removeFile('pdf')">✕</button>
-                        </div>
-                    </div>
-
                     <div class="form-group">
                         <label>📝 الوصف</label>
                         <textarea name="description" placeholder="وصف الكتاب وحالته..."></textarea>
@@ -22961,7 +22859,6 @@ STUDENT_STORE_HTML = '''
                     <div class="actions">
                         {% if purchase.pdf_url %}
                         <a href="{{ purchase.pdf_url }}" target="_blank" class="btn btn-primary btn-xs">📖 قراءة</a>
-                        <a href="{{ purchase.pdf_url }}" download class="btn btn-secondary btn-xs">📥 تحميل</a>
                         {% endif %}
                         <span style="font-size:11px;color:var(--text-muted);">📅 {{ purchase.created_at|fmtdt if purchase.created_at else '—' }}</span>
                     </div>
@@ -23057,6 +22954,42 @@ STUDENT_STORE_HTML = '''
                 });
         }
 
+        function buyColor(colorId) {
+            if (!confirm('🎨 تأكيد شراء هذا اللون وتفعيله؟')) return;
+
+            showToast('info', '⏳', 'جاري معالجة الطلب...');
+
+            fetch('/student/store/buy_color/' + colorId, { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        showToast('success', '✅ تم', data.message || 'تم شراء اللون وتفعيله');
+                        setTimeout(function() { location.reload(); }, 1200);
+                    } else {
+                        showToast('error', '❌ خطأ', data.message || 'حدث خطأ');
+                    }
+                })
+                .catch(function() {
+                    showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال بالخادم');
+                });
+        }
+
+        function activateColor(colorId) {
+            fetch('/student/store/activate_color/' + colorId, { method: 'POST' })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        showToast('success', '✅ تم', data.message || 'تم تفعيل اللون');
+                        setTimeout(function() { location.reload(); }, 1000);
+                    } else {
+                        showToast('error', '❌ خطأ', data.message || 'حدث خطأ');
+                    }
+                })
+                .catch(function() {
+                    showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال بالخادم');
+                });
+        }
+
 
         /**
          * ==========================================
@@ -23068,10 +23001,9 @@ STUDENT_STORE_HTML = '''
             const file = input.files[0];
             if (!file) return;
 
-            // الحد الأقصى: 5MB للصور، 30MB لملفات الكتب PDF
-            const maxSize = (type === 'pdf' ? 30 : 5) * 1024 * 1024;
-            if (file.size > maxSize) {
-                showToast('error', '❌ خطأ', 'الملف كبير جداً، الحد الأقصى ' + (type === 'pdf' ? '30MB' : '5MB'));
+            // التحقق من الحجم (5MB كحد أقصى للصور)
+            if (file.size > 5 * 1024 * 1024) {
+                showToast('error', '❌ خطأ', 'الملف كبير جداً، الحد الأقصى 5MB');
                 input.value = '';
                 return;
             }
@@ -23084,7 +23016,7 @@ STUDENT_STORE_HTML = '''
             sizeEl.textContent = (file.size / 1024).toFixed(1) + ' KB';
 
             const iconEl = preview.querySelector('.file-icon');
-            iconEl.textContent = type === 'pdf' ? '📄' : '🖼️';
+            iconEl.textContent = '🖼️';
 
             preview.classList.add('show');
 
@@ -23690,6 +23622,9 @@ STUDENT_DUELS_HTML = '''
 </head>
 
 <body>
+    {% if student and student.theme_color %}
+    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -24394,7 +24329,7 @@ def admin_dashboard():
 def manage_students():
     """إدارة الطلاب"""
     students = get_all_students()
-    fixed_ids = get_protected_student_ids()  # أول 5 طلاب مقبولين، محميون من التعديل
+    fixed_ids = [1]  # الطلاب المحميين من التعديل
     
     return render_template_string(MANAGE_STUDENTS_HTML, students=students, fixed_ids=fixed_ids)
 @app.route('/admin/students/toggle/<int:student_id>', methods=['POST'])
@@ -24404,8 +24339,6 @@ def toggle_student_status(student_id):
     student = get_student_by_id(student_id)
     if student:
         new_status = 'inactive' if student['status'] == 'active' else 'active'
-        if new_status == 'inactive' and is_protected_student(student_id):
-            return jsonify({'success': False, 'message': 'لا يمكن تعطيل أحد أول 5 طلاب مقبولين'})
         update_student_status(student_id, new_status)
         return jsonify({'success': True})
     return jsonify({'success': False}), 404
@@ -24413,8 +24346,8 @@ def toggle_student_status(student_id):
 @login_required('admin')
 def delete_student_route(student_id):
     """حذف طالب"""
-    # منع حذف الطالب الافتراضي أو أحد أول 5 طلاب مقبولين
-    if student_id == 1 or is_protected_student(student_id):
+    # منع حذف الطالب الافتراضي
+    if student_id == 1:
         return jsonify({'success': False, 'message': 'لا يمكن حذف هذا الطالب'})
     
     delete_student(student_id)
@@ -24430,15 +24363,11 @@ def bulk_student_action():
     if not ids or not action:
         return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
     
-    protected_ids = get_protected_student_ids()
-
     if action == 'activate':
         for student_id in ids:
             update_student_status(student_id, 'active')
     elif action == 'deactivate':
         for student_id in ids:
-            if int(student_id) in protected_ids:
-                continue
             update_student_status(student_id, 'inactive')
     else:
         return jsonify({'success': False, 'message': 'إجراء غير معروف'})
@@ -24453,8 +24382,6 @@ def update_student_rank():
     rank = data.get('rank')
     
     if student_id and rank is not None:
-        if is_protected_student(student_id):
-            return jsonify({'success': False, 'message': 'لا يمكن تغيير ترتيب أحد أول 5 طلاب مقبولين'})
         update_student(student_id, {'rank': rank})
         return jsonify({'success': True})
     return jsonify({'success': False})
@@ -24534,8 +24461,8 @@ def evaluation():
         """, (month['id'],))
     
     total_sessions = query_one("SELECT COUNT(*) as count FROM sessions")['count']
-    total_sent = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE sent = 1")['count']
-    total_pending = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE sent = 0")['count']
+    total_sent = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE sent = true")['count']
+    total_pending = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE sent = false")['count']
     
     return render_template_string(EVALUATION_SESSIONS_HTML, 
                                    students=students, 
@@ -25451,7 +25378,7 @@ def add_assistant():
         return jsonify({'success': False, 'message': 'الرجاء اختيار صلاحية واحدة على الأقل'})
     
     # التحقق من الحد الأقصى للمساعدين
-    count = query_one("SELECT COUNT(*) as count FROM assistants WHERE active = 1")['count']
+    count = query_one("SELECT COUNT(*) as count FROM assistants WHERE active = true")['count']
     if count >= 5:
         return jsonify({'success': False, 'message': 'الحد الأقصى 5 مساعدين نشطين'})
     
@@ -26225,8 +26152,8 @@ def send_student_file():
     if not file_url:
         return jsonify({'success': False, 'message': 'خطأ في رفع الملف'})
     
-    send_message(student['id'], 'student', receiver_id, receiver_type, f"📎 ملف مرفق: {file.filename}", file_url)
-    return jsonify({'success': True, 'message': 'تم إرسال الملف'})
+    message_id = send_message(student['id'], 'student', receiver_id, receiver_type, f"📎 ملف مرفق: {file.filename}", file_url)
+    return jsonify({'success': True, 'message': 'تم إرسال الملف', 'message_id': message_id, 'file_url': file_url})
 @app.route('/student/messages/send_voice', methods=['POST'])
 @login_required('student')
 def send_student_voice():
@@ -26312,12 +26239,15 @@ def student_store():
     books = get_all_books(active_only=True)
     my_purchases = get_student_purchases(student['id'])
     my_offers = get_student_offers(student['id'])
-    
+    owned_color_ids = get_owned_color_ids(student)
+
     return render_template_string(STUDENT_STORE_HTML,
                                    student=student,
                                    books=books,
                                    my_purchases=my_purchases,
                                    my_offers=my_offers,
+                                   store_colors=STORE_COLORS,
+                                   owned_color_ids=owned_color_ids,
                                    datetime=datetime)
 @app.route('/student/store/buy/<int:book_id>', methods=['POST'])
 @login_required('student')
@@ -26328,6 +26258,22 @@ def buy_book_route(book_id):
     if buy_book(student['id'], book_id):
         return jsonify({'success': True, 'message': 'تم شراء الكتاب بنجاح'})
     return jsonify({'success': False, 'message': 'حدث خطأ في الشراء'})
+@app.route('/student/store/buy_color/<color_id>', methods=['POST'])
+@login_required('student')
+def buy_color_route(color_id):
+    """شراء/تفعيل لون واجهة من متجر الألوان"""
+    student = get_current_user()
+    ok, message = buy_theme_color(student['id'], color_id)
+    return jsonify({'success': ok, 'message': message})
+@app.route('/student/store/activate_color/<color_id>', methods=['POST'])
+@login_required('student')
+def activate_color_route(color_id):
+    """تفعيل لون مملوك مسبقاً بدون شراء"""
+    student = get_current_user()
+    ok = set_active_theme_color(student['id'], color_id)
+    if ok:
+        return jsonify({'success': True, 'message': 'تم تفعيل اللون'})
+    return jsonify({'success': False, 'message': 'هذا اللون غير مملوك'})
 @app.route('/student/store/sell', methods=['POST'])
 @login_required('student')
 def sell_book_route():
@@ -26339,24 +26285,14 @@ def sell_book_route():
     description = request.form.get('description')
     price_points = request.form.get('price_points', 10)
     cover_file = request.files.get('cover_file')
-    pdf_file = request.files.get('pdf_file')
     
     if not title:
         return jsonify({'success': False, 'message': 'عنوان الكتاب مطلوب'})
-
-    if not pdf_file or not pdf_file.filename:
-        return jsonify({'success': False, 'message': 'يجب رفع ملف الكتاب بصيغة PDF'})
-
-    if not pdf_file.filename.lower().endswith('.pdf'):
-        return jsonify({'success': False, 'message': 'الملف يجب أن يكون بصيغة PDF'})
     
     # رفع صورة الغلاف
     cover_url = None
     if cover_file and cover_file.filename:
         cover_url = save_uploaded_file(cover_file, 'books')
-
-    # رفع ملف الكتاب PDF
-    pdf_url = save_uploaded_file(pdf_file, 'books')
     
     create_book_offer({
         'student_id': student['id'],
@@ -26364,8 +26300,7 @@ def sell_book_route():
         'author': author,
         'description': description,
         'price_points': int(price_points),
-        'cover_url': cover_url,
-        'pdf_url': pdf_url
+        'cover_url': cover_url
     })
     
     return jsonify({'success': True, 'message': 'تم إرسال العرض بنجاح'})
@@ -26409,45 +26344,11 @@ def create_duel_route():
     duel_id = create_duel(student['id'], opponent_id, duel_type, int(wager_points), custom_type)
     
     return jsonify({'success': True, 'message': 'تم إرسال التحدي بنجاح', 'duel_id': duel_id})
-@app.route('/student/privacy/lock', methods=['POST'])
-@login_required('student')
-def student_privacy_lock():
-    """تشفير معلومات الطالب الحالي في لوحة الصدارة (2000 XP)"""
-    student = get_current_user()
-    ok, msg = lock_student_privacy(student['id'])
-    return jsonify({'success': ok, 'message': msg})
-
-@app.route('/student/privacy/unlock_self', methods=['POST'])
-@login_required('student')
-def student_privacy_unlock_self():
-    """إظهار معلومات الطالب الحالي من جديد في الصدارة (مجاناً)"""
-    student = get_current_user()
-    ok, msg = unlock_own_privacy(student['id'])
-    return jsonify({'success': ok, 'message': msg})
-
-@app.route('/student/privacy/decrypt/<int:target_id>', methods=['POST'])
-@login_required('student')
-def student_privacy_decrypt(target_id):
-    """دفع 1000 XP لفك تشفير معلومات طالب آخر لمدة 24 ساعة"""
-    student = get_current_user()
-    ok, msg = unlock_other_student_privacy(student['id'], target_id)
-    return jsonify({'success': ok, 'message': msg})
-
-@app.route('/student/theme/update', methods=['POST'])
-@login_required('student')
-def student_theme_update():
-    """شراء لون موحّد (250 XP) أو تدرج لونين (500 XP) لكل صفحات الطالب"""
-    student = get_current_user()
-    color1 = request.form.get('color1')
-    color2 = request.form.get('color2') or None
-    ok, msg = set_student_theme(student['id'], color1, color2)
-    return jsonify({'success': ok, 'message': msg})
-
 @app.route('/leaderboard')
 def leaderboard():
     """لوحة الصدارة"""
     top_students = query_all("""
-        SELECT id, name, points, rank, status, privacy_locked, theme_color, theme_color2, theme_gradient
+        SELECT id, name, points, rank, status
         FROM students
         WHERE status = 'active'
         ORDER BY points DESC
@@ -26456,19 +26357,11 @@ def leaderboard():
     
     # إضافة بيانات إضافية
     top_students = [dict(student) for student in top_students]
-
-    viewer_id = session.get('user_id') if session.get('role') == 'student' else None
-    unlocked_ids = get_active_privacy_unlocks(viewer_id) if viewer_id else set()
-
     for student in top_students:
         student['badges'] = get_student_badges(student['id'])
-        is_self = (viewer_id == student['id'])
-        student['is_self'] = is_self
-        student['is_locked'] = bool(student.get('privacy_locked')) and not is_self and student['id'] not in unlocked_ids
     
     return render_template_string(LEADERBOARD_HTML,
                                    top_students=top_students,
-                                   viewer_id=viewer_id,
                                    datetime=datetime)
 @app.route('/static/uploads/<path:filename>')
 def serve_upload(filename):
@@ -26477,56 +26370,56 @@ def serve_upload(filename):
 
 # ===== إضافة الأعمدة المفقودة تلقائياً =====
 def add_missing_columns():
-    """هذه الدالة تضيف الأعمدة المفقودة إلى قاعدة البيانات (تُشغَّل في كل مرة، وتضيف فقط ما هو ناقص)"""
-    columns_to_add = [
-        ('students', 'points', 'INTEGER DEFAULT 0'),
-        ('students', 'last_monthly_xp', 'VARCHAR(7)'),
-        ('students', 'notes', 'TEXT'),
-        ('students', 'is_protected', 'BOOLEAN DEFAULT FALSE'),
-        ('students', 'sort_order', 'INTEGER'),
-        ('students', 'privacy_locked', 'BOOLEAN DEFAULT FALSE'),
-        ('students', 'theme_color', 'VARCHAR(20)'),
-        ('students', 'theme_color2', 'VARCHAR(20)'),
-        ('students', 'theme_gradient', 'BOOLEAN DEFAULT FALSE'),
-        ('students', 'dark_mode', 'BOOLEAN DEFAULT FALSE'),
-        ('students', 'push_subscription', 'TEXT'),
-        ('admins', 'push_subscription', 'TEXT'),
-        ('book_offers', 'pdf_url', 'TEXT'),
-        ('book_offers', 'cover_url', 'TEXT'),
-        ('books', 'max_sales', 'INTEGER'),
-    ]
-
-    for table, column, coltype in columns_to_add:
-        try:
-            exists = query_one("""
-                SELECT column_name
-                FROM information_schema.columns
-                WHERE table_name=%s AND column_name=%s
-            """, (table, column))
-            if exists:
-                continue
-            execute_query(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {coltype}")
-            print(f"✅ تم إضافة {column} إلى {table}")
-        except Exception as e:
-            print(f"⚠️ خطأ أثناء إضافة {column} إلى {table}: {e}")
-
-def ensure_privacy_unlocks_table():
-    """إنشاء جدول عمليات فك تشفير الطلاب في الصدارة إن لم يكن موجوداً"""
+    """هذه الدالة تضيف الأعمدة المفقودة إلى قاعدة البيانات"""
     try:
-        execute_query("""
-            CREATE TABLE IF NOT EXISTS privacy_unlocks (
-                id SERIAL PRIMARY KEY,
-                viewer_id INTEGER NOT NULL,
-                target_id INTEGER NOT NULL,
-                unlocked_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-            )
+        # 1. نتحقق من وجود عمود "points"
+        result = query_one("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='students' AND column_name='points'
         """)
+        
+        # 2. إذا كان موجوداً، نخرج من الدالة (لا حاجة لفعل شيء)
+        if result:
+            print("✅ الأعمدة موجودة مسبقاً")
+            return
+        
+        # 3. إذا لم يكن موجوداً، نضيفه
+        print("🔄 جاري إضافة الأعمدة المفقودة...")
+        
+        # 4. قائمة بالأعمدة التي نريد إضافتها
+        columns_to_add = [
+            ('students', 'points', 'INTEGER DEFAULT 0'),
+            ('students', 'last_monthly_xp', 'VARCHAR(7)'),
+            ('students', 'notes', 'TEXT'),
+        ]
+        
+        # 5. نضيف كل عمود
+        for table, column, type in columns_to_add:
+            try:
+                execute_query(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {type}")
+                print(f"✅ تم إضافة {column} إلى {table}")
+            except Exception as e:
+                print(f"⚠️ خطأ: {e}")
+        
+        print("✅ تم إضافة جميع الأعمدة!")
+        
     except Exception as e:
-        print(f"⚠️ خطأ أثناء إنشاء جدول privacy_unlocks: {e}")
+        print(f"⚠️ خطأ: {e}")
 
 # 6. نشغل الدالة عند بدء التطبيق
 add_missing_columns()
-ensure_privacy_unlocks_table()
+
+def add_theme_color_column():
+    """إضافة عمود لون الواجهة المشتراة من متجر الألوان (يعمل دائماً بغض النظر عن حالة الأعمدة الأخرى)"""
+    try:
+        execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS theme_color VARCHAR(20)")
+        execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS owned_theme_colors TEXT")
+        print("✅ تم التأكد من وجود أعمدة متجر الألوان")
+    except Exception as e:
+        print(f"⚠️ خطأ أثناء إضافة أعمدة متجر الألوان: {e}")
+
+add_theme_color_column()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
