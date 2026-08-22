@@ -1781,6 +1781,7 @@ def init_db():
     try:
         cur.execute("ALTER TABLE competitions ADD COLUMN IF NOT EXISTS is_open INTEGER DEFAULT 1")
     except Exception:
+        
         conn.rollback()
     
     # ============================================================ #
@@ -26162,7 +26163,47 @@ def serve_upload(filename):
     """خدمة الملفات المرفوعة"""
     return send_from_directory(UPLOAD_FOLDER, filename)
 
+# ===== إضافة الأعمدة المفقودة تلقائياً =====
+def add_missing_columns():
+    """هذه الدالة تضيف الأعمدة المفقودة إلى قاعدة البيانات"""
+    try:
+        # 1. نتحقق من وجود عمود "points"
+        result = query_one("""
+            SELECT column_name 
+            FROM information_schema.columns 
+            WHERE table_name='students' AND column_name='points'
+        """)
+        
+        # 2. إذا كان موجوداً، نخرج من الدالة (لا حاجة لفعل شيء)
+        if result:
+            print("✅ الأعمدة موجودة مسبقاً")
+            return
+        
+        # 3. إذا لم يكن موجوداً، نضيفه
+        print("🔄 جاري إضافة الأعمدة المفقودة...")
+        
+        # 4. قائمة بالأعمدة التي نريد إضافتها
+        columns_to_add = [
+            ('students', 'points', 'INTEGER DEFAULT 0'),
+            ('students', 'last_monthly_xp', 'VARCHAR(7)'),
+            ('students', 'notes', 'TEXT'),
+        ]
+        
+        # 5. نضيف كل عمود
+        for table, column, type in columns_to_add:
+            try:
+                execute_query(f"ALTER TABLE {table} ADD COLUMN IF NOT EXISTS {column} {type}")
+                print(f"✅ تم إضافة {column} إلى {table}")
+            except Exception as e:
+                print(f"⚠️ خطأ: {e}")
+        
+        print("✅ تم إضافة جميع الأعمدة!")
+        
+    except Exception as e:
+        print(f"⚠️ خطأ: {e}")
 
+# 6. نشغل الدالة عند بدء التطبيق
+add_missing_columns()
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
