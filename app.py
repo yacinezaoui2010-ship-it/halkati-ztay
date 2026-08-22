@@ -2134,7 +2134,7 @@ HOME_HTML = '''
             inset: 0;
             background:
                 radial-gradient(ellipse 80% 50% at 50% -20%, rgba(45,138,110,0.15), transparent),
-                radial-gradient(ellipse 60% 40% at 80% 100%, rgba(201,162,39,0.08), transparent);
+                radial-gradient(ellipse 60% 40% at 80% 100%, color-mix(in srgb, var(--gold, #c9a227) 8%, transparent), transparent);
         }
         .bg-pattern {
             position: absolute;
@@ -3001,7 +3001,7 @@ LEADERBOARD_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,42,110,0.10), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.05), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 5%, transparent), transparent);
         }
         .bg-pattern {
             position: absolute;
@@ -3439,7 +3439,7 @@ ADMIN_LOGIN_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.15), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.06), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 6%, transparent), transparent);
         }
         .bg-pattern {
             position: absolute;
@@ -3742,7 +3742,7 @@ STUDENT_LOGIN_HTML = r'''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.15), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.06), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 6%, transparent), transparent);
         }
         .bg-pattern {
             position: absolute;
@@ -4072,7 +4072,7 @@ STUDENT_REGISTER_HTML = r'''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,122,90,0.12), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.05), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 5%, transparent), transparent);
         }
         .bg-pattern {
             position: absolute;
@@ -4560,7 +4560,7 @@ ADMIN_DASHBOARD_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.10), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.05), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 5%, transparent), transparent);
         }
         .container { max-width: 1400px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -4976,7 +4976,7 @@ MANAGE_STUDENTS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1400px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -5389,7 +5389,7 @@ REGISTRATION_REQUESTS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1400px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -5812,7 +5812,7 @@ EVALUATION_SESSIONS_HTML = r'''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42, 74, 156, 0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201, 162, 39, 0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -7704,7 +7704,7 @@ HOMEWORK_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1400px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -8183,7 +8183,7 @@ COMPETITIONS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -9689,7 +9689,7 @@ ANALYTICS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1400px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -9971,7 +9971,7 @@ ADMIN_PROFILE_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 900px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -10250,7 +10250,7 @@ ASSISTANTS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -11203,7 +11203,7 @@ MESSAGES_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -13317,7 +13317,7 @@ ADMIN_DUELS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1200px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -13629,7 +13629,7 @@ ADMIN_STORE_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -14895,7 +14895,7 @@ STUDENT_DASHBOARD_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.10), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1200px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -15321,7 +15321,7 @@ ASSISTANT_DASHBOARD_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -16362,7 +16362,7 @@ STUDENT_PROFILE_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 900px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -16630,7 +16630,7 @@ STUDENT_REPORT_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -17682,7 +17682,7 @@ STUDENT_HOMEWORK_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -19019,7 +19019,7 @@ STUDENT_COMPETITIONS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -19919,7 +19919,7 @@ STUDENT_GAMIFICATION_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1000px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -20179,7 +20179,7 @@ STUDENT_MESSAGES_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -21730,7 +21730,7 @@ STUDENT_POINTS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 900px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -22016,7 +22016,7 @@ STUDENT_STORE_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -23172,7 +23172,7 @@ STUDENT_DUELS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -28651,7 +28651,7 @@ HOME_HTML = '''
             inset: 0;
             background:
                 radial-gradient(ellipse 80% 50% at 50% -20%, rgba(45,138,110,0.15), transparent),
-                radial-gradient(ellipse 60% 40% at 80% 100%, rgba(201,162,39,0.08), transparent);
+                radial-gradient(ellipse 60% 40% at 80% 100%, color-mix(in srgb, var(--gold, #c9a227) 8%, transparent), transparent);
         }
         .bg-pattern {
             position: absolute;
@@ -29518,7 +29518,7 @@ LEADERBOARD_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,42,110,0.10), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.05), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 5%, transparent), transparent);
         }
         .bg-pattern {
             position: absolute;
@@ -29956,7 +29956,7 @@ ADMIN_LOGIN_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.15), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.06), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 6%, transparent), transparent);
         }
         .bg-pattern {
             position: absolute;
@@ -30259,7 +30259,7 @@ STUDENT_LOGIN_HTML = r'''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.15), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.06), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 6%, transparent), transparent);
         }
         .bg-pattern {
             position: absolute;
@@ -30589,7 +30589,7 @@ STUDENT_REGISTER_HTML = r'''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,122,90,0.12), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.05), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 5%, transparent), transparent);
         }
         .bg-pattern {
             position: absolute;
@@ -31077,7 +31077,7 @@ ADMIN_DASHBOARD_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.10), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.05), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 5%, transparent), transparent);
         }
         .container { max-width: 1400px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -31493,7 +31493,7 @@ MANAGE_STUDENTS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1400px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -31906,7 +31906,7 @@ REGISTRATION_REQUESTS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1400px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -32329,7 +32329,7 @@ EVALUATION_SESSIONS_HTML = r'''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42, 74, 156, 0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201, 162, 39, 0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -34221,7 +34221,7 @@ HOMEWORK_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1400px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -34700,7 +34700,7 @@ COMPETITIONS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -36206,7 +36206,7 @@ ANALYTICS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1400px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -36488,7 +36488,7 @@ ADMIN_PROFILE_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 900px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -36767,7 +36767,7 @@ ASSISTANTS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -37720,7 +37720,7 @@ MESSAGES_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -39834,7 +39834,7 @@ ADMIN_DUELS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1200px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -40146,7 +40146,7 @@ ADMIN_STORE_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -41412,7 +41412,7 @@ STUDENT_DASHBOARD_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.10), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1200px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -41838,7 +41838,7 @@ ASSISTANT_DASHBOARD_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -42879,7 +42879,7 @@ STUDENT_PROFILE_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 900px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -43147,7 +43147,7 @@ STUDENT_REPORT_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -44199,7 +44199,7 @@ STUDENT_HOMEWORK_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -45536,7 +45536,7 @@ STUDENT_COMPETITIONS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -46436,7 +46436,7 @@ STUDENT_GAMIFICATION_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 1000px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -46696,7 +46696,7 @@ STUDENT_MESSAGES_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -48247,7 +48247,7 @@ STUDENT_POINTS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
         .container { max-width: 900px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
         .header {
@@ -48533,7 +48533,7 @@ STUDENT_STORE_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
@@ -49689,7 +49689,7 @@ STUDENT_DUELS_HTML = '''
             pointer-events: none;
             background:
                 radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+                radial-gradient(ellipse 50% 30% at 70% 80%, color-mix(in srgb, var(--gold, #c9a227) 4%, transparent), transparent);
         }
 
         .container {
