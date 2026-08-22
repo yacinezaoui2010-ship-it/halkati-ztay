@@ -24103,7 +24103,7 @@ def admin_dashboard():
     active_students = query_one("SELECT COUNT(*) as count FROM students WHERE status = 'active'")['count']
     today_evals = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE date = ?", (get_today(),))['count']
     pending_requests = query_one("SELECT COUNT(*) as count FROM registration_requests WHERE status = 'pending'")['count']
-    pending_homework = query_one("SELECT COUNT(*) as count FROM homework WHERE sent = o")['count']
+    pending_homework = query_one("SELECT COUNT(*) as count FROM homework WHERE sent = 0")['count']
     unread_messages = get_unread_count(admin['id'], 'admin')
     
     # آخر التقييمات
