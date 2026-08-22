@@ -2004,6 +2004,7 @@ ADMIN_VIEW_STUDENT_HTML = '''
 </div>  <!-- ✅ نهاية .container -->
 </body>
 </html>
+'''
 init_db()
 # ============================================================ #
 # ====== الصفحة 1: الصفحة الرئيسية (HOME) ==================== #
@@ -24269,8 +24270,8 @@ def evaluation():
         """, (month['id'],))
     
     total_sessions = query_one("SELECT COUNT(*) as count FROM sessions")['count']
-    total_sent = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE sent = true")['count']
-    total_pending = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE sent = false")['count']
+    total_sent = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE sent = 1")['count']
+    total_pending = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE sent = 0")['count']
     
     return render_template_string(EVALUATION_SESSIONS_HTML, 
                                    students=students, 
@@ -25186,7 +25187,7 @@ def add_assistant():
         return jsonify({'success': False, 'message': 'الرجاء اختيار صلاحية واحدة على الأقل'})
     
     # التحقق من الحد الأقصى للمساعدين
-    count = query_one("SELECT COUNT(*) as count FROM assistants WHERE active = true")['count']
+    count = query_one("SELECT COUNT(*) as count FROM assistants WHERE active = 1")['count']
     if count >= 5:
         return jsonify({'success': False, 'message': 'الحد الأقصى 5 مساعدين نشطين'})
     
