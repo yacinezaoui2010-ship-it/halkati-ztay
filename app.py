@@ -24102,7 +24102,7 @@ def admin_dashboard():
     active_students = query_one("SELECT COUNT(*) as count FROM students WHERE status = 'active'")['count']
     today_evals = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE date = ?", (get_today(),))['count']
     pending_requests = query_one("SELECT COUNT(*) as count FROM registration_requests WHERE status = 'pending'")['count']
-    pending_homework = query_one("SELECT COUNT(*) as count FROM homework WHERE sent = 0")['count']
+    pending_homework = query_one("SELECT COUNT(*) as count FROM homework WHERE sent = false")['count']
     unread_messages = get_unread_count(admin['id'], 'admin')
     
     # آخر التقييمات
@@ -24274,8 +24274,8 @@ def evaluation():
         """, (month['id'],))
     
     total_sessions = query_one("SELECT COUNT(*) as count FROM sessions")['count']
-    total_sent = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE sent = 1")['count']
-    total_pending = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE sent = 0")['count']
+    total_sent = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE sent = true")['count']
+    total_pending = query_one("SELECT COUNT(*) as count FROM daily_evaluations WHERE sent = false")['count']
     
     return render_template_string(EVALUATION_SESSIONS_HTML, 
                                    students=students, 
@@ -25191,7 +25191,7 @@ def add_assistant():
         return jsonify({'success': False, 'message': 'الرجاء اختيار صلاحية واحدة على الأقل'})
     
     # التحقق من الحد الأقصى للمساعدين
-    count = query_one("SELECT COUNT(*) as count FROM assistants WHERE active = 1")['count']
+    count = query_one("SELECT COUNT(*) as count FROM assistants WHERE active = true")['count']
     if count >= 5:
         return jsonify({'success': False, 'message': 'الحد الأقصى 5 مساعدين نشطين'})
     
