@@ -13003,7 +13003,6 @@ MESSAGES_HTML = '''
                             markMessageAsRead(msg.id);
                         });
                         updateUnreadCount();
-                        updateContactList();
                     }
 
                     if (data.read_updates && data.read_updates.length > 0) {
@@ -13052,19 +13051,6 @@ MESSAGES_HTML = '''
                     const badge = document.getElementById('unreadCount');
                     badge.textContent = data.count + ' غير مقروء';
                     badge.className = 'badge-count' + (data.count === 0 ? ' zero' : '');
-                })
-                .catch(function() {
-                    // silent fail
-                });
-        }
-
-        function updateContactList() {
-            fetch('/admin/messages/contacts')
-                .then(function(r) {
-                    return r.json();
-                })
-                .then(function(data) {
-                    // تحديث القائمة الجانبية
                 })
                 .catch(function() {
                     // silent fail
@@ -21387,7 +21373,6 @@ STUDENT_MESSAGES_HTML = '''
                             markMessageAsRead(msg.id);
                         });
                         updateUnreadCount();
-                        updateContactList();
                     }
 
                     // تحديث حالة الرسائل المرسلة إلى مقروءة (✔️✔️)
@@ -21435,17 +21420,6 @@ STUDENT_MESSAGES_HTML = '''
                     const badge = document.getElementById('unreadCount');
                     badge.textContent = data.count + ' غير مقروء';
                     badge.className = 'badge-count' + (data.count === 0 ? ' zero' : '');
-                })
-                .catch(function() {
-                    // silent fail
-                });
-        }
-
-        function updateContactList() {
-            fetch('/student/messages/contacts')
-                .then(function(r) { return r.json(); })
-                .then(function(data) {
-                    // تحديث القائمة الجانبية
                 })
                 .catch(function() {
                     // silent fail
