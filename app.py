@@ -5132,6 +5132,17 @@ MANAGE_STUDENTS_HTML = '''
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+            <div style="padding:12px 16px;margin-bottom:14px;border-radius:10px;font-size:14px;font-weight:600;
+                {% if category == 'success' %}background:rgba(74,222,128,0.15);color:#4ade80;border:1px solid rgba(74,222,128,0.3);
+                {% else %}background:rgba(248,113,113,0.15);color:#f87171;border:1px solid rgba(248,113,113,0.3);{% endif %}">
+                {{ message }}
+            </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
     <div class="header">
         <h1>👨‍🎓 <span class="highlight">إدارة الطلاب</span></h1>
         <div class="actions">
@@ -24328,6 +24339,69 @@ def admin_dashboard():
 @login_required('admin')
 def manage_students():
     """إدارة الطلاب"""
+    if request.method == 'POST':
+        action = request.form.get('action', 'add')
+        name = request.form.get('name', '').strip()
+        email = request.form.get('email', '').strip()
+        password = request.form.get('password', '')
+        phone = request.form.get('phone', '')
+        parent_phone = request.form.get('parent_phone', '')
+        address = request.form.get('address', '')
+        rank = request.form.get('rank', 0) or 0
+        status = request.form.get('status', 'active')
+        payment_status = request.form.get('payment_status', 'pending')
+        notes = request.form.get('notes', '')
+
+        if action == 'add':
+            if not name or not email or not password:
+                flash('الاسم والبريد الإلكتروني وكلمة المرور حقول مطلوبة', 'danger')
+            elif get_student_by_email(email):
+                flash('يوجد طالب مسجل بهذا البريد الإلكتروني مسبقاً', 'danger')
+            else:
+                try:
+                    new_id = create_student({
+                        'name': name,
+                        'email': email,
+                        'password': password,
+                        'phone': phone,
+                        'parent_phone': parent_phone,
+                        'address': address,
+                        'rank': int(rank)
+                    })
+                    if new_id and (status != 'active' or payment_status != 'pending' or notes):
+                        update_student(new_id, {
+                            'status': status,
+                            'payment_status': payment_status,
+                            'notes': notes
+                        })
+                    flash('تم إضافة الطالب بنجاح', 'success')
+                except Exception as e:
+                    print(f"⚠️ خطأ أثناء إضافة طالب: {e}")
+                    flash('حدث خطأ أثناء إضافة الطالب', 'danger')
+        elif action == 'edit':
+            student_id = request.form.get('student_id')
+            if not student_id:
+                flash('طالب غير محدد', 'danger')
+            else:
+                update_data = {
+                    'name': name,
+                    'phone': phone,
+                    'parent_phone': parent_phone,
+                    'address': address,
+                    'rank': int(rank),
+                    'status': status,
+                    'payment_status': payment_status,
+                    'notes': notes
+                }
+                if password:
+                    update_data['password'] = password
+                update_student(int(student_id), update_data)
+                flash('تم تحديث بيانات الطالب بنجاح', 'success')
+        else:
+            flash('إجراء غير معروف', 'danger')
+
+        return redirect(url_for('manage_students'))
+
     students = get_all_students()
     fixed_ids = [1]  # الطلاب المحميين من التعديل
     
