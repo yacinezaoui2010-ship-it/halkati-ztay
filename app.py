@@ -2017,8 +2017,8 @@ ADMIN_VIEW_STUDENT_HTML = '''
             <div class="avatar">{{ student.name[0] }}</div>
             <div class="profile-info">
                 <h2>{{ student.name }}</h2>
-                <p>📧 {{ student.email }} | 📱 {{ student.phone or '—' }} | 📊 المستوى {{ student.rank or 0 }}</p>
-                <p>🏠 {{ student.address or '—' }}</p>
+                <p>📧 {{ student.email }} | 📱 {{ student.phone or '-' }} | 📊 المستوى {{ student.rank or 0 }}</p>
+                <p>🏠 {{ student.address or '-' }}</p>
             </div>
         </div>
     </div>
@@ -2045,7 +2045,7 @@ ADMIN_VIEW_STUDENT_HTML = '''
             <thead><tr><th>التاريخ</th><th>الحفظ</th><th>درجة الحفظ</th><th>المراجعة</th><th>درجة المراجعة</th><th>الواجب</th></tr></thead>
             <tbody>
                 {% for ev in recent_evals %}
-                <tr><td>{{ ev.date }}</td><td>{{ ev.curr_save or '—' }}</td><td>{{ ev.score_save or 0 }}</td><td>{{ ev.curr_rev or '—' }}</td><td>{{ ev.score_rev or 0 }}</td><td>{{ ev.homework_score or 0 }}</td></tr>
+                <tr><td>{{ ev.date }}</td><td>{{ ev.curr_save or '-' }}</td><td>{{ ev.score_save or 0 }}</td><td>{{ ev.curr_rev or '-' }}</td><td>{{ ev.score_rev or 0 }}</td><td>{{ ev.homework_score or 0 }}</td></tr>
                 {% else %}
                 <tr><td colspan="6" style="text-align:center;color:var(--text-muted);">لا توجد تقييمات</td></tr>
                 {% endfor %}
@@ -2071,6 +2071,7 @@ ADMIN_VIEW_STUDENT_HTML = '''
 </div>  <!-- ✅ نهاية .container -->
 </body>
 </html>
+'''
 init_db()
 # ============================================================ #
 # ====== الصفحة 1: الصفحة الرئيسية (HOME) ==================== #
@@ -2082,11 +2083,11 @@ HOME_HTML = '''
     <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>حلقتي زتاي — نظام إدارة الحلقة القرآنية الذكي</title>
+    <title>حلقتي زتاي - نظام إدارة الحلقة القرآنية الذكي</title>
     <meta name="description" content="نظام إدارة الحلقة القرآنية - منصة متكاملة لحفظ القرآن وتجويده وتطبيق أخلاقه">
     <meta name="keywords" content="حفظ القرآن, حلقة قرآنية, تعليم القرآن, تحفيظ القرآن, الشيخ أبو عمر بومسلة العيد">
     <meta name="author" content="زاوي طه أحمد ياسين">
-    <meta property="og:title" content="حلقتي زتاي — نظام إدارة الحلقة القرآنية">
+    <meta property="og:title" content="حلقتي زتاي - نظام إدارة الحلقة القرآنية">
     <meta property="og:description" content="منصة متكاملة لحفظ القرآن الكريم وتجويده وتطبيق أخلاقه">
     <meta property="og:type" content="website">
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
@@ -2756,18 +2757,18 @@ HOME_HTML = '''
         </div>
         <div class="motto-box">
             <div class="motto-text">خُذِ الْعَفْوَ وَأْمُرْ بِالْعُرْفِ وَأَعْرِضْ عَنِ الْجَاهِلِينَ</div>
-            <div class="motto-ref">سورة الأعراف — الآية 199</div>
+            <div class="motto-ref">سورة الأعراف - الآية 199</div>
         </div>
         <div class="daily-content">
             <div class="daily-card">
                 <div class="label">📖 آية اليوم</div>
                 <div class="arabic">{{ daily_verse.arabic|default('وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ', true) }}</div>
-                <div class="translation">{{ daily_verse.translation|default('ولقد يسرنا القرآن للذكر فهل من مدكر — القمر 17', true) }}</div>
+                <div class="translation">{{ daily_verse.translation|default('ولقد يسرنا القرآن للذكر فهل من مدكر - القمر 17', true) }}</div>
             </div>
             <div class="daily-card">
                 <div class="label">📜 حديث اليوم</div>
                 <div class="arabic">{{ daily_hadith.arabic|default('خَيْرُكُمْ مَنْ تَعَلَّمَ الْقُرْآنَ وَعَلَّمَهُ', true) }}</div>
-                <div class="translation">{{ daily_hadith.translation|default('خيركم من تعلم القرآن وعلمه — رواه البخاري', true) }}</div>
+                <div class="translation">{{ daily_hadith.translation|default('خيركم من تعلم القرآن وعلمه - رواه البخاري', true) }}</div>
             </div>
         </div>
         <div class="welcome-section">
@@ -2840,20 +2841,20 @@ HOME_HTML = '''
             <div class="testimonial-grid">
                 <div class="testimonial-item">
                     <div class="quote">"الحلقة غيرت حياتي، حفظت أكثر من 15 جزء بفضل الله ثم بفضل الشيخ"</div>
-                    <div class="author">— أحمد محمد</div>
+                    <div class="author">- أحمد محمد</div>
                 </div>
                 <div class="testimonial-item">
                     <div class="quote">"بيئة إيمانية رائعة، أبنائي تحسن مستواهم في القراءة والتجويد بشكل ملحوظ"</div>
-                    <div class="author">— والد الطالب يوسف</div>
+                    <div class="author">- والد الطالب يوسف</div>
                 </div>
                 <div class="testimonial-item">
                     <div class="quote">"نظام التقييم اليومي ساعدني على الاستمرارية والالتزام بالحفظ"</div>
-                    <div class="author">— فاطمة الزهراء</div>
+                    <div class="author">- فاطمة الزهراء</div>
                 </div>
             </div>
         </div>
         <div class="footer">
-            <p>© 2026 حلقتي زتاي — جميع الحقوق محفوظة</p>
+            <p>© 2026 حلقتي زتاي - جميع الحقوق محفوظة</p>
             <p class="creator">تصميم وتطوير: زاوي طه أحمد ياسين</p>
             <p style="margin-top:2px;">بإشراف الشيخ أبو عمر بومسلة العيد</p>
             <div class="social-links">
@@ -3304,8 +3305,8 @@ LEADERBOARD_HTML = '''
                 <div class="rank">{% if loop.index == 1 %}<span class="medal">🥇</span>{% elif loop.index == 2 %}<span class="medal">🥈</span>{% elif loop.index == 3 %}<span class="medal">🥉</span>{% else %}<span class="num">{{ loop.index }}</span>{% endif %}</div>
                 <div class="name"><div class="avatar {% if loop.index == 1 %}gold{% elif loop.index == 2 %}silver{% elif loop.index == 3 %}bronze{% endif %}">{{ student.name[0]|upper }}</div><div><div class="full-name">{{ student.name }}</div><div class="sub-info">📚 {{ student.rank|default(0, true) }} مستوى</div></div></div>
                 <div class="points">{{ student.points|default(0, true) }}</div>
-                <div class="badges">{% if loop.index <= 3 %}🏅🌟⭐{% elif loop.index <= 10 %}🏅🌟{% elif loop.index <= 25 %}🏅{% else %}<span class="empty">—</span>{% endif %}</div>
-                <div class="change {% if loop.index <= 3 %}up{% elif loop.index <= 5 %}down{% else %}same{% endif %}">{% if loop.index <= 3 %}↑ +{{ 5 - loop.index + 1 }}{% elif loop.index <= 5 %}↓ -{{ loop.index - 3 }}{% else %}—{% endif %}</div>
+                <div class="badges">{% if loop.index <= 3 %}🏅🌟⭐{% elif loop.index <= 10 %}🏅🌟{% elif loop.index <= 25 %}🏅{% else %}<span class="empty">-</span>{% endif %}</div>
+                <div class="change {% if loop.index <= 3 %}up{% elif loop.index <= 5 %}down{% else %}same{% endif %}">{% if loop.index <= 3 %}↑ +{{ 5 - loop.index + 1 }}{% elif loop.index <= 5 %}↓ -{{ loop.index - 3 }}{% else %}-{% endif %}</div>
             </div>
             {% else %}
             <div style="text-align:center;padding:40px 0;color:var(--text-muted);"><div style="font-size:48px;margin-bottom:12px;">📊</div><div>لا يوجد طلاب لعرضهم بعد</div></div>
@@ -3877,7 +3878,7 @@ STUDENT_LOGIN_HTML = r'''
         <h1>دخول <span class="highlight">الطالب</span></h1>
         <div class="subtitle">نظام إدارة الحلقة القرآنية</div>
     </div>
-    <div class="motivation-bar">"وَقُل رَّبِّ زِدْنِي عِلْمًا"<span class="ref">— سورة طه، الآية 114</span></div>
+    <div class="motivation-bar">"وَقُل رَّبِّ زِدْنِي عِلْمًا"<span class="ref">- سورة طه، الآية 114</span></div>
     {% if streak %}
     <div class="streak-display">
         <div class="streak-item"><span class="value">{{ streak.days }}</span><span class="label">🔥 أيام متتالية</span></div>
@@ -4329,19 +4330,19 @@ STUDENT_REGISTER_HTML = r'''
             </div>
             <div id="summaryData" style="background:rgba(255,255,255,0.03);border-radius:10px;padding:14px;border:1px solid var(--glass-border);margin-bottom:16px;">
                 <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--glass-border);font-size:14px;">
-                    <span style="color:var(--text-muted);">الاسم:</span><span id="summaryName" style="font-weight:600;">—</span>
+                    <span style="color:var(--text-muted);">الاسم:</span><span id="summaryName" style="font-weight:600;">-</span>
                 </div>
                 <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--glass-border);font-size:14px;">
-                    <span style="color:var(--text-muted);">البريد:</span><span id="summaryEmail" style="font-weight:600;">—</span>
+                    <span style="color:var(--text-muted);">البريد:</span><span id="summaryEmail" style="font-weight:600;">-</span>
                 </div>
                 <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--glass-border);font-size:14px;">
-                    <span style="color:var(--text-muted);">الهاتف:</span><span id="summaryPhone" style="font-weight:600;">—</span>
+                    <span style="color:var(--text-muted);">الهاتف:</span><span id="summaryPhone" style="font-weight:600;">-</span>
                 </div>
                 <div style="display:flex;justify-content:space-between;padding:4px 0;border-bottom:1px solid var(--glass-border);font-size:14px;">
-                    <span style="color:var(--text-muted);">هاتف ولي الأمر:</span><span id="summaryParentPhone" style="font-weight:600;">—</span>
+                    <span style="color:var(--text-muted);">هاتف ولي الأمر:</span><span id="summaryParentPhone" style="font-weight:600;">-</span>
                 </div>
                 <div style="display:flex;justify-content:space-between;padding:4px 0;font-size:14px;">
-                    <span style="color:var(--text-muted);">العنوان:</span><span id="summaryAddress" style="font-weight:600;text-align:left;">—</span>
+                    <span style="color:var(--text-muted);">العنوان:</span><span id="summaryAddress" style="font-weight:600;text-align:left;">-</span>
                 </div>
             </div>
             <div style="background:rgba(201,162,39,0.06);border-radius:10px;padding:12px 16px;border:1px solid var(--gold-glow);margin-bottom:16px;text-align:center;font-size:13px;color:var(--text-secondary);">
@@ -4484,11 +4485,11 @@ function previewAvatar(input) {
     } else preview.style.display = 'none';
 }
 function updateSummary() {
-    document.getElementById('summaryName').textContent = document.getElementById('name').value || '—';
-    document.getElementById('summaryEmail').textContent = document.getElementById('email').value || '—';
-    document.getElementById('summaryPhone').textContent = document.getElementById('phone').value || '—';
-    document.getElementById('summaryParentPhone').textContent = document.getElementById('parent_phone').value || '—';
-    document.getElementById('summaryAddress').textContent = document.getElementById('address').value || '—';
+    document.getElementById('summaryName').textContent = document.getElementById('name').value || '-';
+    document.getElementById('summaryEmail').textContent = document.getElementById('email').value || '-';
+    document.getElementById('summaryPhone').textContent = document.getElementById('phone').value || '-';
+    document.getElementById('summaryParentPhone').textContent = document.getElementById('parent_phone').value || '-';
+    document.getElementById('summaryAddress').textContent = document.getElementById('address').value || '-';
 }
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Enter') {
@@ -4741,7 +4742,7 @@ ADMIN_DASHBOARD_HTML = '''
     <div class="stats-grid">
         <div class="stat-card" onclick="location.href='{{ url_for('manage_students') }}'"><div class="icon">👨‍🎓</div><div class="number">{{ students_count }}</div><div class="label">إجمالي الطلاب</div><div class="change up">↑ +{{ new_students_today|default(0, true) }} اليوم</div><div class="trend-line"></div></div>
         <div class="stat-card" onclick="location.href='{{ url_for('manage_students') }}?status=active'"><div class="icon">✅</div><div class="number">{{ active_students }}</div><div class="label">طلاب نشطين</div><div class="change up">↑ {{ active_rate|default(0, true) }}%</div><div class="trend-line"></div></div>
-        <div class="stat-card" onclick="location.href='{{ url_for('evaluation') }}'"><div class="icon">📊</div><div class="number">{{ today_evaluations }}</div><div class="label">تقييمات اليوم</div><div class="change {% if today_evaluations > 0 %}up{% else %}down{% endif %}">{% if today_evaluations > 0 %}↑ {{ today_evaluations }}{% else %}—{% endif %}</div><div class="trend-line"></div></div>
+        <div class="stat-card" onclick="location.href='{{ url_for('evaluation') }}'"><div class="icon">📊</div><div class="number">{{ today_evaluations }}</div><div class="label">تقييمات اليوم</div><div class="change {% if today_evaluations > 0 %}up{% else %}down{% endif %}">{% if today_evaluations > 0 %}↑ {{ today_evaluations }}{% else %}-{% endif %}</div><div class="trend-line"></div></div>
         <div class="stat-card" onclick="location.href='{{ url_for('homework') }}'"><div class="icon">📚</div><div class="number">{{ unsent_homework }}</div><div class="label">واجبات غير مرسلة</div><div class="change {% if unsent_homework > 0 %}down{% else %}up{% endif %}">{% if unsent_homework > 0 %}⚠️ {{ unsent_homework }}{% else %}✅ كامل{% endif %}</div><div class="trend-line"></div></div>
         <div class="stat-card" onclick="location.href='{{ url_for('admin_messages') }}'"><div class="icon">💬</div><div class="number">{{ messages_count }}</div><div class="label">رسائل غير مقروءة</div><div class="change {% if messages_count > 0 %}down{% else %}up{% endif %}">{% if messages_count > 0 %}📩 {{ messages_count }}{% else %}✅ مقروءة{% endif %}</div><div class="trend-line"></div></div>
         <div class="stat-card" onclick="location.href='{{ url_for('registration_requests') }}'"><div class="icon">📝</div><div class="number">{{ pending_requests }}</div><div class="label">طلبات تسجيل</div><div class="change {% if pending_requests > 0 %}down{% else %}up{% endif %}">{% if pending_requests > 0 %}⏳ {{ pending_requests }}{% else %}✅ لا يوجد{% endif %}</div><div class="trend-line"></div></div>
@@ -5608,7 +5609,7 @@ REGISTRATION_REQUESTS_HTML = '''
                         <td>{{ req.phone or '-' }}</td>
                         <td>{{ req.parent_phone or '-' }}</td>
                         <td style="max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">{{ req.address or '-' }}</td>
-                        <td>{{ req.created_at|fmtdt if req.created_at else '—' }}</td>
+                        <td>{{ req.created_at|fmtdt if req.created_at else '-' }}</td>
                         <td><span class="status-badge status-{{ req.status }}">{% if req.status == 'pending' %}⏳ معلق{% elif req.status == 'accepted' %}✅ مقبول{% else %}❌ مرفوض{% endif %}</span></td>
                         <td><div class="action-buttons">{% if req.status == 'pending' %}<button class="btn btn-success btn-xs" onclick="acceptRequest('{{ req.id }}')">✅ قبول</button><button class="btn btn-danger btn-xs" onclick="rejectRequest('{{ req.id }}')">❌ رفض</button>{% endif %}<button class="btn btn-outline btn-xs" onclick="viewRequest('{{ req.id }}')">👁️</button></div></td>
                     </tr>
@@ -5624,13 +5625,13 @@ REGISTRATION_REQUESTS_HTML = '''
     <div class="modal">
         <div class="modal-header"><h2>👤 تفاصيل الطلب</h2><button class="close" onclick="closeModal()">✕</button></div>
         <div id="requestDetails">
-            <div class="info-row"><span class="label">الاسم</span><span class="value" id="viewName">—</span></div>
-            <div class="info-row"><span class="label">📧 البريد الإلكتروني</span><span class="value" id="viewEmail">—</span></div>
-            <div class="info-row"><span class="label">📱 رقم الهاتف</span><span class="value" id="viewPhone">—</span></div>
-            <div class="info-row"><span class="label">📞 هاتف ولي الأمر</span><span class="value" id="viewParentPhone">—</span></div>
-            <div class="info-row"><span class="label">🏠 العنوان</span><span class="value" id="viewAddress">—</span></div>
-            <div class="info-row"><span class="label">📅 تاريخ الطلب</span><span class="value" id="viewDate">—</span></div>
-            <div class="info-row"><span class="label">الحالة</span><span class="value" id="viewStatus">—</span></div>
+            <div class="info-row"><span class="label">الاسم</span><span class="value" id="viewName">-</span></div>
+            <div class="info-row"><span class="label">📧 البريد الإلكتروني</span><span class="value" id="viewEmail">-</span></div>
+            <div class="info-row"><span class="label">📱 رقم الهاتف</span><span class="value" id="viewPhone">-</span></div>
+            <div class="info-row"><span class="label">📞 هاتف ولي الأمر</span><span class="value" id="viewParentPhone">-</span></div>
+            <div class="info-row"><span class="label">🏠 العنوان</span><span class="value" id="viewAddress">-</span></div>
+            <div class="info-row"><span class="label">📅 تاريخ الطلب</span><span class="value" id="viewDate">-</span></div>
+            <div class="info-row"><span class="label">الحالة</span><span class="value" id="viewStatus">-</span></div>
         </div>
         <div class="notes-box"><strong>📝 ملاحظات:</strong><span id="viewNotesText">لا توجد ملاحظات</span></div>
         <div style="display:flex;gap:10px;margin-top:12px;" id="viewActions">
@@ -5707,12 +5708,12 @@ function viewRequest(id) {
     if (!row) return;
     currentRequestId = id;
     const cells = row.querySelectorAll('td');
-    document.getElementById('viewName').textContent = cells[1]?.textContent?.trim() || '—';
-    document.getElementById('viewEmail').textContent = cells[2]?.textContent || '—';
-    document.getElementById('viewPhone').textContent = cells[3]?.textContent || '—';
-    document.getElementById('viewParentPhone').textContent = cells[4]?.textContent || '—';
-    document.getElementById('viewAddress').textContent = cells[5]?.textContent || '—';
-    document.getElementById('viewDate').textContent = cells[6]?.textContent || '—';
+    document.getElementById('viewName').textContent = cells[1]?.textContent?.trim() || '-';
+    document.getElementById('viewEmail').textContent = cells[2]?.textContent || '-';
+    document.getElementById('viewPhone').textContent = cells[3]?.textContent || '-';
+    document.getElementById('viewParentPhone').textContent = cells[4]?.textContent || '-';
+    document.getElementById('viewAddress').textContent = cells[5]?.textContent || '-';
+    document.getElementById('viewDate').textContent = cells[6]?.textContent || '-';
     const status = row.dataset.status || 'pending';
     const statusMap = { 'pending': '⏳ معلق', 'accepted': '✅ مقبول', 'rejected': '❌ مرفوض' };
     document.getElementById('viewStatus').textContent = statusMap[status] || status;
@@ -9021,7 +9022,7 @@ COMPETITIONS_HTML = '''
                 <div class="card-body">
                     <div class="info-row">
                         <span class="label">📝 الوصف</span>
-                        <span class="value">{{ comp.description or '—' }}</span>
+                        <span class="value">{{ comp.description or '-' }}</span>
                     </div>
                     <div class="info-row">
                         <span class="label">⭐ الدرجة القصوى</span>
@@ -9185,7 +9186,7 @@ COMPETITIONS_HTML = '''
                     <button class="btn btn-success btn-sm" onclick="exportGrades()">📥 تصدير النتائج</button>
                 </div>
                 <div style="font-size:12px;color:var(--text-muted);">
-                    🏆 أفضل طالب: <span id="topStudent">{{ top_student_name|default('—', true) }}</span>
+                    🏆 أفضل طالب: <span id="topStudent">{{ top_student_name|default('-', true) }}</span>
                 </div>
             </div>
         </div>
@@ -9812,7 +9813,7 @@ ANALYTICS_HTML = '''
         <div class="stat-card"><div class="icon">📅</div><div class="number">{{ attendance_rate|default(0, true) }}%</div><div class="label">نسبة الحضور</div><div class="change up">↑ +{{ attendance_change|default(0, true) }}%</div></div>
         <div class="stat-card"><div class="icon">🏆</div><div class="number">{{ competitions_count|default(0, true) }}</div><div class="label">مسابقات هذا الشهر</div><div class="change up">↑ +{{ competitions_change|default(0, true) }}</div></div>
         <div class="stat-card"><div class="icon">📚</div><div class="number">{{ homework_completion|default(0, true) }}%</div><div class="label">إنجاز الواجبات</div><div class="change up">↑ +{{ homework_change|default(0, true) }}%</div></div>
-        <div class="stat-card"><div class="icon">⭐</div><div class="number">{{ top_student_score|default(0, true) }}</div><div class="label">أعلى درجة طالب</div><div class="change">{{ top_student_name|default('—', true) }}</div></div>
+        <div class="stat-card"><div class="icon">⭐</div><div class="number">{{ top_student_score|default(0, true) }}</div><div class="label">أعلى درجة طالب</div><div class="change">{{ top_student_name|default('-', true) }}</div></div>
     </div>
     <div class="charts-grid">
         <div class="chart-panel">
@@ -10849,7 +10850,7 @@ ASSISTANTS_HTML = '''
                     </div>
                     <div class="info-row">
                         <span class="label">📅 تاريخ المنح</span>
-                        <span class="value">{{ assistant.granted_at|fmtdt if assistant.granted_at else '—' }}</span>
+                        <span class="value">{{ assistant.granted_at|fmtdt if assistant.granted_at else '-' }}</span>
                     </div>
                     <div class="info-row">
                         <span class="label">📊 الإجراءات</span>
@@ -10870,13 +10871,13 @@ ASSISTANTS_HTML = '''
                                     ⏳ قادمة
                                 {% endif %}
                             {% else %}
-                                —
+                                -
                             {% endif %}
                         </span>
                     </div>
                     <div class="info-row">
                         <span class="label">📅 آخر منحة</span>
-                        <span class="value">{{ assistant.last_xp_granted|fmtdt if assistant.last_xp_granted else '—' }}</span>
+                        <span class="value">{{ assistant.last_xp_granted|fmtdt if assistant.last_xp_granted else '-' }}</span>
                     </div>
                 </div>
 
@@ -12500,7 +12501,7 @@ MESSAGES_HTML = '''
                 <button class="close" onclick="closeVideoCallModal()">✕</button>
             </div>
             <div id="videoCallContainer" style="width:100%;height:480px;border-radius:12px;overflow:hidden;background:#000;"></div>
-            <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">📡 مكالمة مباشرة عبر Jitsi Meet — شارك رابط الغرفة مع الطرف الآخر إذا لم ينضم تلقائياً.</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">📡 مكالمة مباشرة عبر Jitsi Meet - شارك رابط الغرفة مع الطرف الآخر إذا لم ينضم تلقائياً.</div>
         </div>
     </div>
 
@@ -13500,7 +13501,7 @@ ADMIN_DUELS_HTML = '''
                         <td>{{ duel.wager_points }} نقطة</td>
                         <td>{{ duel.scheduled_at|fmtdt if duel.scheduled_at else duel.created_at|fmtdt }}</td>
                         <td><span class="status-badge status-{{ duel.status }}">{% if duel.status == 'pending' %}⏳ معلق{% elif duel.status == 'accepted' %}✅ مقبول{% elif duel.status == 'completed' %}🏆 مكتمل{% else %}❌ مرفوض{% endif %}</span></td>
-                        <td><div class="action-buttons">{% if duel.status == 'pending' %}<button class="btn btn-success btn-xs" onclick="approveDuel('{{ duel.id }}')">✅ قبول</button><button class="btn btn-danger btn-xs" onclick="rejectDuel('{{ duel.id }}')">❌ رفض</button>{% elif duel.status == 'accepted' %}<select class="winner-select" id="winner-{{ duel.id }}"><option value="{{ duel.challenger_id }}">{{ duel.challenger_name }}</option><option value="{{ duel.opponent_id }}">{{ duel.opponent_name }}</option></select><button class="btn btn-primary btn-xs" onclick="resultDuel('{{ duel.id }}')">🏆 نتيجة</button>{% elif duel.status == 'completed' %}<span style="font-size:12px;color:var(--text-muted);">🏆 {{ duel.winner_name|default('انتهى', true) }}</span>{% else %}<span style="font-size:12px;color:var(--text-muted);">—</span>{% endif %}</div></td>
+                        <td><div class="action-buttons">{% if duel.status == 'pending' %}<button class="btn btn-success btn-xs" onclick="approveDuel('{{ duel.id }}')">✅ قبول</button><button class="btn btn-danger btn-xs" onclick="rejectDuel('{{ duel.id }}')">❌ رفض</button>{% elif duel.status == 'accepted' %}<select class="winner-select" id="winner-{{ duel.id }}"><option value="{{ duel.challenger_id }}">{{ duel.challenger_name }}</option><option value="{{ duel.opponent_id }}">{{ duel.opponent_name }}</option></select><button class="btn btn-primary btn-xs" onclick="resultDuel('{{ duel.id }}')">🏆 نتيجة</button>{% elif duel.status == 'completed' %}<span style="font-size:12px;color:var(--text-muted);">🏆 {{ duel.winner_name|default('انتهى', true) }}</span>{% else %}<span style="font-size:12px;color:var(--text-muted);">-</span>{% endif %}</div></td>
                     </tr>
                     {% else %}
                     <tr><td colspan="8" style="text-align:center;color:var(--text-muted);padding:30px 0;"><div style="font-size:40px;margin-bottom:10px;">⚔️</div>لا توجد تحديات</td></tr>
@@ -14529,9 +14530,9 @@ ADMIN_STORE_HTML = '''
                                 <td>{{ offer.id }}</td>
                                 <td>{{ offer.student_name }}</td>
                                 <td style="text-align:right;font-weight:600;">{{ offer.title }}</td>
-                                <td>{{ offer.author or '—' }}</td>
+                                <td>{{ offer.author or '-' }}</td>
                                 <td>{{ offer.price_points }} نقطة</td>
-                                <td>{{ offer.created_at|fmtdt if offer.created_at else '—' }}</td>
+                                <td>{{ offer.created_at|fmtdt if offer.created_at else '-' }}</td>
                                 <td>
                                     <span class="status-badge status-{{ offer.status }}">
                                         {% if offer.status == 'pending' %}⏳ معلق
@@ -15919,7 +15920,7 @@ ASSISTANT_DASHBOARD_HTML = '''
                 </div>
             </div>
             <div style="text-align:left;font-size:12px;color:var(--text-muted);">
-                📅 تاريخ المنح: {{ assistant_info.granted_at|fmtdt if assistant_info.granted_at else '—' }}
+                📅 تاريخ المنح: {{ assistant_info.granted_at|fmtdt if assistant_info.granted_at else '-' }}
                 <br>
                 📊 المهام المكتملة: {{ stats.completed_tasks|default(0, true) }}
                 <br>
@@ -15976,7 +15977,7 @@ ASSISTANT_DASHBOARD_HTML = '''
                 <div class="xp-entry">
                     <span class="xp-amount">+{{ entry.amount }} XP</span>
                     <span class="xp-reason">{{ entry.reason }}</span>
-                    <span class="xp-time">{{ entry.created_at|fmtdt if entry.created_at else '—' }}</span>
+                    <span class="xp-time">{{ entry.created_at|fmtdt if entry.created_at else '-' }}</span>
                 </div>
                 {% endfor %}
             </div>
@@ -15996,7 +15997,7 @@ ASSISTANT_DASHBOARD_HTML = '''
                     <div class="task-title">{{ task.title }}</div>
                     <div class="task-desc">{{ task.description or 'لا يوجد وصف' }}</div>
                     <div class="task-meta">
-                        <span>📅 {{ task.created_at|fmtdt if task.created_at else '—' }}</span>
+                        <span>📅 {{ task.created_at|fmtdt if task.created_at else '-' }}</span>
                         <span class="status-badge {{ task.status }}">
                             {% if task.status == 'completed' %}✅ مكتمل
                             {% elif task.status == 'in_progress' %}🔄 قيد التنفيذ
@@ -16087,7 +16088,7 @@ ASSISTANT_DASHBOARD_HTML = '''
                         {% for eval in recent_evaluations %}
                         <tr>
                             <td>{{ eval.student_name }}</td>
-                            <td>{{ eval.date|fmtdt if eval.date else '—' }}</td>
+                            <td>{{ eval.date|fmtdt if eval.date else '-' }}</td>
                             <td>{{ eval.score_save|default(0, true) }}</td>
                             <td>{{ eval.score_rev|default(0, true) }}</td>
                             <td>
@@ -16130,7 +16131,7 @@ ASSISTANT_DASHBOARD_HTML = '''
                         {% for comp in active_competitions %}
                         <tr>
                             <td>{{ comp.name }}</td>
-                            <td>{{ comp.date|fmtdt if comp.date else '—' }}</td>
+                            <td>{{ comp.date|fmtdt if comp.date else '-' }}</td>
                             <td>{{ comp.participants_count|default(0, true) }}</td>
                             <td>
                                 <span class="status-badge {% if comp.active %}completed{% else %}pending{% endif %}">
@@ -16509,7 +16510,7 @@ STUDENT_PROFILE_HTML = '''
     <div class="profile-card">
         <div class="profile-header">
             <div class="avatar">{{ student.name[0]|upper }}</div>
-            <div class="info"><h2>{{ student.name }}</h2><div class="role">📖 طالب في الحلقة القرآنية</div><div class="join-date">📅 انضم في: {{ student.join_date or '—' }}</div></div>
+            <div class="info"><h2>{{ student.name }}</h2><div class="role">📖 طالب في الحلقة القرآنية</div><div class="join-date">📅 انضم في: {{ student.join_date or '-' }}</div></div>
         </div>
         <div class="stats-row">
             <div class="stat"><div class="num">{{ student.points|default(0, true) }}</div><div class="label">⭐ نقاط</div></div>
@@ -17322,7 +17323,7 @@ STUDENT_REPORT_HTML = '''
                                 {% for session in month.sessions %}
                                 <tr class="{% if (session.score_save|default(0, true)) + (session.score_rev|default(0, true)) + (session.homework_score|default(0, true)) >= 20 %}high-score{% elif (session.score_save|default(0, true)) + (session.score_rev|default(0, true)) + (session.homework_score|default(0, true)) <= 10 %}low-score{% endif %}">
                                     <td>{{ loop.index }}</td>
-                                    <td>{{ session.date or '—' }}</td>
+                                    <td>{{ session.date or '-' }}</td>
                                     <td>{{ session.curr_save or '-' }}</td>
                                     <td>{{ session.score_save|default(0, true) }}</td>
                                     <td>{{ session.curr_rev or '-' }}</td>
@@ -18565,15 +18566,15 @@ STUDENT_HOMEWORK_HTML = '''
             <div class="info-panel" id="hwInfo">
                 <div class="info-row">
                     <span class="label">📅 التاريخ</span>
-                    <span class="value" id="hwDate">—</span>
+                    <span class="value" id="hwDate">-</span>
                 </div>
                 <div class="info-row">
                     <span class="label">📝 التفاصيل</span>
-                    <span class="value" id="hwDetails">—</span>
+                    <span class="value" id="hwDetails">-</span>
                 </div>
                 <div class="info-row">
                     <span class="label">📌 ملاحظات</span>
-                    <span class="value" id="hwNotes">—</span>
+                    <span class="value" id="hwNotes">-</span>
                 </div>
             </div>
 
@@ -18721,9 +18722,9 @@ STUDENT_HOMEWORK_HTML = '''
                 .then(function(r) { return r.json(); })
                 .then(function(data) {
                     if (data.success) {
-                        document.getElementById('hwDate').textContent = data.date || '—';
-                        document.getElementById('hwDetails').textContent = data.details || '—';
-                        document.getElementById('hwNotes').textContent = data.notes || '—';
+                        document.getElementById('hwDate').textContent = data.date || '-';
+                        document.getElementById('hwDetails').textContent = data.details || '-';
+                        document.getElementById('hwNotes').textContent = data.notes || '-';
                         document.getElementById('modalTitle').textContent = data.submitted ? '📩 عرض التسليم' :
                             '📤 تسليم الواجب';
 
@@ -18733,7 +18734,7 @@ STUDENT_HOMEWORK_HTML = '''
                             statusDiv.innerHTML = `
                                         <div class="submission-status submitted">
                                             <div class="title success">✅ تم تسليم هذا الواجب</div>
-                                            <div class="details">📅 تاريخ التسليم: ${data.submitted_at || '—'}</div>
+                                            <div class="details">📅 تاريخ التسليم: ${data.submitted_at || '-'}</div>
                                             ${data.grade ? `<div class="details">⭐ الدرجة: <strong style="color:var(--gold-light);">${data.grade}</strong></div>` : ''}
                                             ${data.feedback ? `<div class="details">📝 ملاحظات المشرف: ${data.feedback}</div>` : ''}
                                         </div>
@@ -19606,7 +19607,7 @@ STUDENT_COMPETITIONS_HTML = '''
                 <div class="card-body">
                     <div class="info-row">
                         <span class="label">📝 الوصف</span>
-                        <span class="value">{{ comp.description or '—' }}</span>
+                        <span class="value">{{ comp.description or '-' }}</span>
                     </div>
                     <div class="info-row">
                         <span class="label">⭐ الدرجة القصوى</span>
@@ -21910,8 +21911,8 @@ STUDENT_POINTS_HTML = '''
                 <tbody id="transactionsBody">
                     {% for t in transactions %}
                     <tr class="{{ t.type }}">
-                        <td>{{ t.created_at|fmtdt if t.created_at else '—' }}</td>
-                        <td style="text-align:right;">{{ t.reason or '—' }}</td>
+                        <td>{{ t.created_at|fmtdt if t.created_at else '-' }}</td>
+                        <td style="text-align:right;">{{ t.reason or '-' }}</td>
                         <td><span class="type-badge {{ t.type }}">{% if t.type == 'earned' %}📈 مكتسب{% else %}📉 منفق{% endif %}</span></td>
                         <td class="{% if t.type == 'earned' %}amount-earned{% else %}amount-spent{% endif %}">{% if t.type == 'earned' %}+{% else %}-{% endif %}{{ t.amount }}</td>
                     </tr>
@@ -22871,7 +22872,7 @@ STUDENT_STORE_HTML = '''
                         {% if purchase.pdf_url %}
                         <a href="{{ purchase.pdf_url }}" target="_blank" class="btn btn-primary btn-xs">📖 قراءة</a>
                         {% endif %}
-                        <span style="font-size:11px;color:var(--text-muted);">📅 {{ purchase.created_at|fmtdt if purchase.created_at else '—' }}</span>
+                        <span style="font-size:11px;color:var(--text-muted);">📅 {{ purchase.created_at|fmtdt if purchase.created_at else '-' }}</span>
                     </div>
                 </div>
                 {% else %}
@@ -23763,7 +23764,7 @@ STUDENT_DUELS_HTML = '''
                                 {% endif %}
                             </td>
                             <td>{{ duel.wager_points }} نقطة</td>
-                            <td>{{ duel.created_at|fmtdt if duel.created_at else '—' }}</td>
+                            <td>{{ duel.created_at|fmtdt if duel.created_at else '-' }}</td>
                             <td>
                                 <span class="status-badge status-{{ duel.status }}">
                                     {% if duel.status == 'pending' %}⏳ معلق
@@ -23781,7 +23782,7 @@ STUDENT_DUELS_HTML = '''
                                     <span style="color:var(--danger);font-weight:700;">📉 خسارة</span>
                                     {% endif %}
                                 {% else %}
-                                <span style="font-size:12px;color:var(--text-muted);">—</span>
+                                <span style="font-size:12px;color:var(--text-muted);">-</span>
                                 {% endif %}
                             </td>
                         </tr>
@@ -24254,11 +24255,11 @@ def home():
     
     daily_verse = {
         'arabic': 'وَلَقَدْ يَسَّرْنَا الْقُرْآنَ لِلذِّكْرِ فَهَلْ مِن مُّدَّكِرٍ',
-        'translation': 'ولقد يسرنا القرآن للذكر فهل من مدكر — القمر 17'
+        'translation': 'ولقد يسرنا القرآن للذكر فهل من مدكر - القمر 17'
     }
     daily_hadith = {
         'arabic': 'خَيْرُكُمْ مَنْ تَعَلَّمَ الْقُرْآنَ وَعَلَّمَهُ',
-        'translation': 'خيركم من تعلم القرآن وعلمه — رواه البخاري'
+        'translation': 'خيركم من تعلم القرآن وعلمه - رواه البخاري'
     }
     
     return render_template_string(HOME_HTML, stats=stats, daily_verse=daily_verse, daily_hadith=daily_hadith, datetime=datetime, timedelta=timedelta)
