@@ -881,6 +881,20 @@ def get_unread_count(user_id, user_type=None):
             (user_id,)
         )
     return result['count'] if result else 0
+def get_all_notifications(user_id, user_type, limit=200):
+    """الحصول على جميع إشعارات المستخدم (المقروءة وغير المقروءة) لصفحة الإشعارات الكاملة"""
+    rows = query_all(
+        """SELECT m.id, m.message, m.created_at, m.sender_id, m.sender_type, m.is_read,
+                  COALESCE(s.name, a.name, 'مستخدم') as sender_name
+           FROM messages m
+           LEFT JOIN students s ON m.sender_type = 'student' AND m.sender_id = s.id
+           LEFT JOIN admins a ON m.sender_type = 'admin' AND m.sender_id = a.id
+           WHERE m.receiver_id = ? AND m.receiver_type = ?
+           ORDER BY m.created_at DESC, m.id DESC
+           LIMIT ?""",
+        (user_id, user_type, limit)
+    )
+    return [dict(r) for r in rows]
 def get_recent_notifications(user_id, user_type, limit=8):
     """الحصول على آخر الإشعارات (الرسائل غير المقروءة) لعرضها في قائمة الجرس"""
     rows = query_all(
@@ -2527,6 +2541,7 @@ ADMIN_VIEW_STUDENT_HTML = '''
     <div class="header">
         <h1>👤 ملف الطالب</h1>
         <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <a href="{{ url_for('admin_student_memorization', student_id=student.id) }}" class="btn">📖 تحديد السور المحفوظة</a>
             <a href="{{ url_for('admin_messages') }}?contact={{ student.id }}" class="btn">💬 رسالة فردية</a>
             <a href="{{ url_for('admin_messages') }}" class="btn btn-gold">📨 صفحة الرسائل</a>
             <a href="{{ url_for('manage_students') }}" class="btn btn-outline">⬅ الرجوع</a>
@@ -2590,6 +2605,196 @@ ADMIN_VIEW_STUDENT_HTML = '''
         {% endif %}
     </div>
 </div>  <!-- ✅ نهاية .container -->
+</body>
+</html>
+'''
+# ============================================================ #
+# ====== صفحة المسؤول: تحديد السور المحفوظة لطالب معيّن ======= #
+# ============================================================ #
+ADMIN_STUDENT_MEMORIZATION_HTML = '''
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سور {{ student.name }} المحفوظة - إدارة</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary-dark: #0a2a32; --gold: #c9a227; --gold-light: #e8c84a;
+            --glass: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.10);
+            --text-primary: #ffffff; --text-secondary: rgba(255,255,255,0.7); --text-muted: rgba(255,255,255,0.35);
+            --success: #4ade80; --danger: #f87171; --warning: #fbbf24;
+        }
+        body { font-family: 'Tajawal', sans-serif; background: var(--primary-dark); min-height: 100vh; color: var(--text-primary); }
+        .container { max-width: 900px; margin: 0 auto; padding: 16px 20px 40px; }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 22px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; margin-bottom: 16px; }
+        .header h1 { font-size: 20px; font-weight: 800; }
+        .btn { padding: 7px 16px; border: none; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; color:#fff; background: var(--gold); }
+        .btn-outline { background: transparent; border: 1.5px solid var(--glass-border); color: var(--text-secondary); }
+        .summary { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 16px; padding: 22px; text-align: center; margin-bottom: 18px; }
+        .summary .num { font-size: 40px; font-weight: 900; background: linear-gradient(135deg, var(--gold-light), var(--gold)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .summary .lbl { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        .summary .actions { margin-top: 14px; display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+        .progress-bar { width: 100%; height: 10px; background: rgba(255,255,255,0.08); border-radius: 20px; overflow: hidden; margin-top: 12px; }
+        .progress-bar .fill { height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-light)); border-radius: 20px; transition: width 0.4s ease; }
+        .juz-card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+        .juz-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; cursor: pointer; }
+        .juz-head .title { font-weight: 700; font-size: 14px; }
+        .juz-head .tag { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 700; }
+        .juz-head .tag.done { background: rgba(74,222,128,0.15); color: var(--success); }
+        .juz-head .tag.pending { background: rgba(251,191,36,0.15); color: var(--warning); }
+        .juz-body { display: none; padding: 4px 16px 14px; }
+        .juz-body.open { display: block; }
+        .surah-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 4px; border-bottom: 1px solid var(--glass-border); font-size: 13px; }
+        .surah-row:last-child { border-bottom: none; }
+        .surah-row input[type=checkbox] { width: 19px; height: 19px; cursor: pointer; accent-color: var(--gold); }
+        .surah-row label { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1; }
+    </style>
+</head>
+<body>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+<div class="container">
+    <div class="header">
+        <h1>📖 سور {{ student.name }} المحفوظة</h1>
+        <a href="{{ url_for('admin_view_student', student_id=student.id) }}" class="btn btn-outline">⬅ ملف الطالب</a>
+    </div>
+    <div class="summary">
+        <div class="num" id="juzCount">{{ juz_count }}</div>
+        <div class="lbl">من 30 جزءاً محفوظاً</div>
+        <div class="progress-bar"><div class="fill" id="juzFill" style="width: {{ (juz_count / 30 * 100) }}%;"></div></div>
+        <div class="actions">
+            <button type="button" class="btn" onclick="selectAll(true)">✅ تحديد الكل</button>
+            <button type="button" class="btn btn-outline" onclick="selectAll(false)">🗑️ إلغاء تحديد الكل</button>
+        </div>
+    </div>
+    {% for j in juz_list %}
+    <div class="juz-card">
+        <div class="juz-head" onclick="this.nextElementSibling.classList.toggle('open')">
+            <span class="title">📗 الجزء {{ j.number }}</span>
+            <span class="tag {{ 'done' if j.complete else 'pending' }}" id="juzTag{{ j.number }}">{{ '✅ مكتمل' if j.complete else 'غير مكتمل' }}</span>
+        </div>
+        <div class="juz-body">
+            {% for s in j.surahs %}
+            <div class="surah-row">
+                <label>
+                    <input type="checkbox" data-surah="{{ s.number }}" {% if s.memorized %}checked{% endif %} onchange="toggleSurah(this)">
+                    سورة {{ s.name }}
+                </label>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+<script>
+function toggleSurah(cb) {
+    const surah = cb.dataset.surah;
+    fetch("{{ url_for('admin_student_memorization_toggle', student_id=student.id) }}", {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({surah_number: surah, memorized: cb.checked})
+    }).then(r => r.json()).then(data => {
+        if (data.ok) updateSummary(data.juz_count, data.completed_juz);
+    });
+}
+function updateSummary(juzCount, completedJuz) {
+    document.getElementById('juzCount').textContent = juzCount;
+    document.getElementById('juzFill').style.width = (juzCount / 30 * 100) + '%';
+    document.querySelectorAll('[id^="juzTag"]').forEach(tag => {
+        const jn = parseInt(tag.id.replace('juzTag', ''));
+        const done = completedJuz.includes(jn);
+        tag.textContent = done ? '✅ مكتمل' : 'غير مكتمل';
+        tag.className = 'tag ' + (done ? 'done' : 'pending');
+    });
+}
+function selectAll(memorized) {
+    if (!confirm(memorized ? 'هل تريد تحديد كل السور كمحفوظة؟' : 'هل تريد إلغاء تحديد كل السور؟')) return;
+    fetch("{{ url_for('admin_student_memorization_select_all', student_id=student.id) }}", {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({memorized: memorized})
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            document.querySelectorAll('.surah-row input[type=checkbox]').forEach(cb => cb.checked = memorized);
+            updateSummary(data.juz_count, data.completed_juz);
+        }
+    });
+}
+</script>
+</body>
+</html>
+'''
+# ============================================================ #
+# ====== صفحة الإشعارات الكاملة (طالب/مشرف) =================== #
+# ============================================================ #
+NOTIFICATIONS_HTML = '''
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>الإشعارات - حلقتي زتاي</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary-dark: #0a2a32; --gold: #c9a227; --gold-light: #e8c84a;
+            --glass: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.10);
+            --text-primary: #ffffff; --text-secondary: rgba(255,255,255,0.7); --text-muted: rgba(255,255,255,0.35);
+            --success: #4ade80; --danger: #f87171; --warning: #fbbf24;
+        }
+        body { font-family: 'Tajawal', sans-serif; background: var(--primary-dark); min-height: 100vh; color: var(--text-primary); }
+        .container { max-width: 720px; margin: 0 auto; padding: 16px 20px 40px; }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 22px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; margin-bottom: 16px; }
+        .header h1 { font-size: 20px; font-weight: 800; }
+        .btn { padding: 7px 16px; border: none; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; color:#fff; background: var(--gold); }
+        .btn-outline { background: transparent; border: 1.5px solid var(--glass-border); color: var(--text-secondary); }
+        .notif-item { display: block; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 12px; padding: 14px 16px; margin-bottom: 10px; text-decoration: none; color: inherit; position: relative; }
+        .notif-item.unread { border-color: var(--gold); background: rgba(201,162,39,0.08); }
+        .notif-item .type { font-size: 12px; color: var(--gold-light); font-weight: 700; margin-bottom: 4px; }
+        .notif-item .from { font-size: 12px; color: var(--text-muted); margin-bottom: 6px; }
+        .notif-item .msg { font-size: 14px; color: var(--text-primary); line-height: 1.6; }
+        .notif-item .time { font-size: 11px; color: var(--text-muted); margin-top: 8px; }
+        .notif-item .dot { position: absolute; top: 14px; left: 14px; width: 9px; height: 9px; border-radius: 50%; background: var(--gold); }
+        .empty { text-align: center; color: var(--text-muted); padding: 60px 0; font-size: 15px; }
+    </style>
+</head>
+<body>
+    {% if student %}{{ theme_style(student)|safe }}{% endif %}
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+<div class="container">
+    <div class="header">
+        <h1>🔔 الإشعارات</h1>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;">
+            <button type="button" class="btn" onclick="markAllRead()">✅ تحديد الكل كمقروء</button>
+            <a href="{{ back_url }}" class="btn btn-outline">⬅ الرجوع</a>
+        </div>
+    </div>
+    <div id="notifList">
+        {% for n in notifications %}
+        <a href="{{ url_for('notification_open', message_id=n.id) }}" class="notif-item {{ 'unread' if not n.is_read else '' }}">
+            {% if not n.is_read %}<span class="dot"></span>{% endif %}
+            <div class="type">📩 رسالة</div>
+            <div class="from">من: {{ n.sender_name }}</div>
+            <div class="msg">{{ n.message }}</div>
+            <div class="time">{{ n.created_at }}</div>
+        </a>
+        {% else %}
+        <div class="empty">📭 لا توجد أي إشعارات بعد</div>
+        {% endfor %}
+    </div>
+</div>
+<script>
+function markAllRead() {
+    fetch('/api/notifications/read_all', { method: 'POST' })
+        .then(function() { location.reload(); })
+        .catch(function() {});
+}
+</script>
 </body>
 </html>
 '''
@@ -4414,11 +4619,6 @@ STUDENT_LOGIN_HTML = r'''
         .btn-login.loading .spinner { display: block; }
         .btn-login.loading .btn-text { display: none; }
         @keyframes spin { to { transform: rotate(360deg); } }
-        .biometric-section { text-align: center; margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--glass-border); }
-        .biometric-section .btn-biometric { background: none; border: 1.5px solid var(--glass-border); border-radius: 12px; padding: 10px 20px; color: var(--text-secondary); font-family: inherit; font-size: 14px; cursor: pointer; transition: all 0.3s ease; display: inline-flex; align-items: center; gap: 8px; }
-        .biometric-section .btn-biometric:hover { border-color: var(--gold); color: var(--text-primary); background: rgba(255,255,255,0.04); }
-        .biometric-section .btn-biometric .icon { font-size: 20px; }
-        .biometric-section .btn-biometric .status { font-size: 11px; color: var(--text-muted); }
         .alert { padding: 12px 16px; border-radius: 10px; margin-bottom: 16px; font-size: 14px; display: flex; align-items: center; gap: 10px; animation: slideUp 0.3s ease; }
         .alert-danger { background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.2); color: var(--danger); }
         .alert-success { background: rgba(74,222,128,0.12); border: 1px solid rgba(74,222,128,0.2); color: var(--success); }
@@ -4489,12 +4689,6 @@ STUDENT_LOGIN_HTML = r'''
         </div>
         <button type="submit" class="btn-login" id="loginBtn"><span class="btn-text">🚪 دخول</span><span class="spinner"></span></button>
     </form>
-    <div class="biometric-section">
-        <button class="btn-biometric" onclick="startBiometric()" id="biometricBtn">
-            <span class="icon">🖐️</span>
-            <span>دخول بالبصمة <span class="status" id="biometricStatus">(غير مدعوم)</span></span>
-        </button>
-    </div>
     <div class="login-footer">
         <a href="{{ url_for('admin_login') }}">🕌 دخول المشرف</a>
         <span class="separator">|</span>
@@ -4559,23 +4753,6 @@ function showForgotPassword() {
     if (email && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) alert(`📧 تم إرسال رابط إعادة تعيين كلمة المرور إلى: ${email}`);
     else alert('📧 الرجاء إدخال بريدك الإلكتروني أولاً، وسنرسل لك رابط إعادة تعيين كلمة المرور.');
 }
-function startBiometric() {
-    const status = document.getElementById('biometricStatus');
-    if (!window.PublicKeyCredential) { status.textContent = '❌ غير مدعوم'; status.style.color = '#f87171'; alert('⚠️ متصفحك لا يدعم خاصية البصمة.\\nيرجى استخدام كلمة المرور العادية.'); return; }
-    status.textContent = '⏳ جاري التحقق...'; status.style.color = '#fbbf24';
-    setTimeout(() => {
-        if (Math.random() > 0.3) { status.textContent = '✅ تم التحقق بنجاح!'; status.style.color = '#4ade80'; document.getElementById('loginBtn').click(); }
-        else { status.textContent = '❌ فشل التحقق، حاول مرة أخرى'; status.style.color = '#f87171'; }
-    }, 2000);
-}
-document.addEventListener('DOMContentLoaded', () => {
-    const status = document.getElementById('biometricStatus');
-    if (window.PublicKeyCredential) { status.textContent = '✅ مدعوم'; status.style.color = '#4ade80'; }
-    else { status.textContent = '❌ غير مدعوم'; status.style.color = '#f87171'; }
-});
-document.addEventListener('keydown', (e) => {
-    if (e.ctrlKey && e.shiftKey && e.key === 'B') { e.preventDefault(); startBiometric(); }
-});
 let lastSubmitTime = 0;
 document.getElementById('loginForm').addEventListener('submit', (e) => {
     const now = Date.now();
@@ -4583,7 +4760,7 @@ document.getElementById('loginForm').addEventListener('submit', (e) => {
     lastSubmitTime = now;
 });
 console.log('📖 صفحة دخول الطالب جاهزة');
-console.log('🔥 ميزات: Streak, Biometric, Password Strength, Motivation');
+console.log('🔥 ميزات: Streak, Password Strength, Motivation');
 </script>
 </body>
 </html>
@@ -5284,13 +5461,9 @@ ADMIN_DASHBOARD_HTML = '''
             <span class="date">{{ datetime.now().strftime('%A, %d %B %Y') }}</span>
         </div>
         <div class="right">
-            <div class="notification-bell" onclick="toggleNotificationsPanel(event)">
+            <a class="notification-bell" href="{{ url_for('notifications_page') }}" style="text-decoration:none;">
                 🔔<span class="count" id="notifCount">{{ notifications_count|default(0, true) }}</span>
-                <div class="notif-panel" id="notifPanel">
-                    <div class="notif-panel-header"><span>🔔 الإشعارات</span><button onclick="markAllNotificationsRead(event)">تحديد الكل كمقروء</button></div>
-                    <div class="notif-list" id="notifList"><div class="notif-empty">📭 لا توجد إشعارات جديدة</div></div>
-                </div>
-            </div>
+            </a>
             <div class="admin-info"><div class="avatar">{{ admin.name[0]|upper }}</div><span class="name">{{ admin.name }}</span></div>
             <a href="{{ url_for('admin_profile') }}" class="btn btn-outline btn-sm">👤</a>
             <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪</a>
@@ -15994,13 +16167,9 @@ STUDENT_DASHBOARD_HTML = '''
     <div class="header">
         <div class="left"><div class="avatar">{{ student.name[0]|upper }}</div><div class="info"><h1>مرحباً {{ student.name }}</h1><div class="sub">📚 الترتيب: #{{ student.rank }} · {{ student.points|default(0, true) }} نقطة</div></div></div>
         <div class="right">
-            <div class="notification-bell" onclick="toggleNotificationsPanel(event)">
+            <a class="notification-bell" href="{{ url_for('notifications_page') }}" style="text-decoration:none;">
                 🔔<span class="count" id="notifCount" data-zero="{{ '0' if unread_messages else '1' }}">{{ unread_messages|default(0, true) }}</span>
-                <div class="notif-panel" id="notifPanel">
-                    <div class="notif-panel-header"><span>🔔 الإشعارات</span><button onclick="markAllNotificationsRead(event)">تحديد الكل كمقروء</button></div>
-                    <div class="notif-list" id="notifList"><div class="notif-empty">📭 لا توجد إشعارات جديدة</div></div>
-                </div>
-            </div>
+            </a>
             <a href="{{ url_for('student_profile') }}" class="btn btn-outline btn-sm">👤 ملفي</a><a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a>
         </div>
     </div>
@@ -16013,7 +16182,7 @@ STUDENT_DASHBOARD_HTML = '''
         <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
-        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
+        {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
         <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -17423,7 +17592,7 @@ STUDENT_PROFILE_HTML = '''
         <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
-        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
+        {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
         <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -18144,7 +18313,7 @@ STUDENT_REPORT_HTML = '''
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
-        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
+        {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
             <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -19405,7 +19574,7 @@ STUDENT_HOMEWORK_HTML = '''
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
-        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
+        {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
             <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -20520,7 +20689,7 @@ STUDENT_COMPETITIONS_HTML = '''
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
-        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
+        {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
             <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -21853,7 +22022,7 @@ STUDENT_MESSAGES_HTML = '''
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
-        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
+        {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
             <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -22801,7 +22970,7 @@ STUDENT_POINTS_HTML = '''
         <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
-        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
+        {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
         <a href="{{ url_for('student_points') }}" class="active">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
         <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -23072,7 +23241,7 @@ STUDENT_LEVEL_HTML = '''
         <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}" class="active">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
-        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
+        {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
         <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -23220,7 +23389,7 @@ STUDENT_PROMOTIONS_HTML = '''
         <a href="{{ url_for('student_dashboard') }}">📊 الرئيسية</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
-        <a href="{{ url_for('student_promotions') }}" class="active">⚖️ طلبات التقييم</a>
+        {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}" class="active">⚖️ طلبات التقييم</a>{% endif %}
     </div>
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% for category, msg in messages %}<div class="flash-msg {{ category }}">{{ msg }}</div>{% endfor %}
@@ -24000,7 +24169,7 @@ STUDENT_STORE_HTML = '''
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
-        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
+        {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}" class="active">🛍️ المتجر</a>
             <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -25003,7 +25172,7 @@ STUDENT_DUELS_HTML = '''
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
-        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
+        {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
             <a href="{{ url_for('student_duels') }}" class="active">⚔️ تحدياتي</a>
@@ -25289,6 +25458,46 @@ def logout():
     destroy_session()
     flash('تم تسجيل الخروج بنجاح', 'success')
     return redirect(url_for('home'))
+@app.route('/notifications/open/<int:message_id>')
+@login_required()
+def notification_open(message_id):
+    """تحديد إشعار كمقروء ثم التوجه إلى صفحة الرسائل المناسبة للدردشة مع المرسل"""
+    role = session.get('role')
+    user_type = 'admin' if role == 'admin' else 'student'
+    user_id = session.get('user_id')
+    note = query_one(
+        "SELECT * FROM messages WHERE id = ? AND receiver_id = ? AND receiver_type = ?",
+        (message_id, user_id, user_type)
+    )
+    if not note:
+        flash('الإشعار غير موجود', 'danger')
+        return redirect(url_for('notifications_page'))
+    mark_message_as_read(message_id)
+    if user_type == 'admin':
+        if note.get('is_group') and note.get('group_id'):
+            return redirect(url_for('admin_messages') + f"?group={note['group_id']}")
+        return redirect(url_for('admin_messages') + f"?contact={note['sender_id']}")
+    else:
+        if note.get('is_group') and note.get('group_id'):
+            return redirect(url_for('student_messages') + f"?group={note['group_id']}")
+        return redirect(url_for('student_messages') + f"?contact={note['sender_id']}")
+@app.route('/notifications')
+@login_required()
+def notifications_page():
+    """صفحة تعرض جميع إشعارات المستخدم الحالي (مقروءة وغير مقروءة)"""
+    role = session.get('role')
+    user_type = 'admin' if role == 'admin' else 'student'
+    user_id = session.get('user_id')
+    notes = get_all_notifications(user_id, user_type)
+    back_endpoint = 'admin_dashboard' if user_type == 'admin' else 'student_dashboard'
+    current_user = get_current_user()
+    return render_template_string(NOTIFICATIONS_HTML,
+                                   notifications=notes,
+                                   back_url=url_for(back_endpoint),
+                                   student=current_user if user_type == 'student' else None,
+                                   admin=current_user if user_type == 'admin' else None,
+                                   is_admin=(user_type == 'admin'),
+                                   datetime=datetime)
 @app.route('/api/notifications')
 @login_required()
 def api_notifications():
@@ -26544,6 +26753,69 @@ def admin_view_student(student_id):
                                    student_groups=student_groups,
                                    datetime=datetime)
 
+@app.route('/admin/student/<int:student_id>/memorization')
+@login_required(role='admin')
+def admin_student_memorization(student_id):
+    """يتيح للمشرف تحديد/تعديل السور التي حفظها طالب معيّن"""
+    student = get_student_by_id(student_id)
+    if not student:
+        flash('الطالب غير موجود', 'danger')
+        return redirect(url_for('manage_students'))
+    student = dict(student)
+    memorized_ids = get_student_memorized_surahs(student_id)
+    juz_count, completed_juz = compute_juz_count(memorized_ids)
+    juz_list = []
+    for j in range(1, 31):
+        surahs_in_juz = sorted(JUZ_SURAHS[j])
+        juz_list.append({
+            'number': j,
+            'complete': j in completed_juz,
+            'surahs': [
+                {'number': s, 'name': SURAH_NAMES[s - 1], 'memorized': s in memorized_ids}
+                for s in surahs_in_juz
+            ],
+        })
+    return render_template_string(ADMIN_STUDENT_MEMORIZATION_HTML,
+                                   student=student,
+                                   juz_list=juz_list,
+                                   juz_count=juz_count)
+@app.route('/admin/student/<int:student_id>/memorization/toggle', methods=['POST'])
+@login_required(role='admin')
+def admin_student_memorization_toggle(student_id):
+    """تبديل حالة سورة (محفوظة / غير محفوظة) لطالب معيّن من قبل المشرف"""
+    student = get_student_by_id(student_id)
+    if not student:
+        return jsonify({'ok': False, 'message': 'الطالب غير موجود'}), 404
+    data = request.get_json(silent=True) or request.form
+    try:
+        surah_number = int(data.get('surah_number'))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'message': 'سورة غير صالحة'}), 400
+    if surah_number < 1 or surah_number > 114:
+        return jsonify({'ok': False, 'message': 'سورة غير صالحة'}), 400
+    memorized = str(data.get('memorized')).lower() in ('1', 'true', 'yes', 'on')
+    toggle_student_surah(student_id, surah_number, memorized)
+    memorized_ids = get_student_memorized_surahs(student_id)
+    juz_count, completed_juz = compute_juz_count(memorized_ids)
+    return jsonify({'ok': True, 'juz_count': juz_count, 'completed_juz': completed_juz})
+@app.route('/admin/student/<int:student_id>/memorization/select_all', methods=['POST'])
+@login_required(role='admin')
+def admin_student_memorization_select_all(student_id):
+    """تحديد كل السور كمحفوظة (أو إلغاء تحديدها جميعاً دفعة واحدة) لطالب معيّن"""
+    student = get_student_by_id(student_id)
+    if not student:
+        return jsonify({'ok': False, 'message': 'الطالب غير موجود'}), 404
+    data = request.get_json(silent=True) or request.form
+    memorized = str(data.get('memorized')).lower() in ('1', 'true', 'yes', 'on')
+    if memorized:
+        for s in range(1, 115):
+            toggle_student_surah(student_id, s, True)
+    else:
+        execute_query("DELETE FROM student_surahs WHERE student_id = ?", (student_id,))
+    memorized_ids = get_student_memorized_surahs(student_id)
+    juz_count, completed_juz = compute_juz_count(memorized_ids)
+    return jsonify({'ok': True, 'juz_count': juz_count, 'completed_juz': completed_juz})
+
 @app.route('/admin/analytics')
 @login_required('admin')
 def admin_analytics():
@@ -27432,8 +27704,11 @@ def student_level_request():
 @app.route('/student/promotions')
 @login_required('student')
 def student_promotions():
-    """طلبات الترقية التي كُلّف فيها الطالب الحالي كمقيّم"""
+    """طلبات الترقية التي كُلّف فيها الطالب الحالي كمقيّم (حصرياً لطلاب النخبة فما فوق)"""
     student = get_current_user()
+    if (student.get('level') or 0) < 7:
+        flash('هذه الصفحة متاحة فقط لطلاب مستوى النخبة فما فوق', 'danger')
+        return redirect(url_for('student_dashboard'))
     pending = get_pending_evaluations_for_student(student['id'])
     pending_detailed = []
     for req in pending:
