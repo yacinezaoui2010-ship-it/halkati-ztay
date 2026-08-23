@@ -25429,8 +25429,10 @@ def admin_assistants():
         
         # XP
         assistant['xp_points'] = assistant.get('xp_points', 0)
-        assistant['xp_due_date'] = assistant.get('xp_due_date', '')
-        assistant['last_xp_granted'] = assistant.get('last_xp_granted', '')
+        xp_due = assistant.get('xp_due_date')
+        assistant['xp_due_date'] = xp_due.strftime('%Y-%m-%d') if xp_due and hasattr(xp_due, 'strftime') else (xp_due or '')
+        last_xp = assistant.get('last_xp_granted')
+        assistant['last_xp_granted'] = last_xp.strftime('%Y-%m-%d %H:%M:%S') if last_xp and hasattr(last_xp, 'strftime') else (last_xp or '')
     
     return render_template_string(ASSISTANTS_HTML,
                                    assistants=assistants_list,
