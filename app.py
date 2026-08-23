@@ -493,7 +493,7 @@ def check_and_award_badges(student_id):
             if not badge_exists:
                 continue
             execute_query(
-                "INSERT INTO student_badges (student_id, badge_id) VALUES (?, ?)",
+                "INSERT INTO student_badges (student_id, badge_id) VALUES (?, ?) ON CONFLICT DO NOTHING RETURNING student_id",
                 (student_id, badge['id'])
             )
 def get_all_badges():
@@ -526,6 +526,193 @@ def get_badges_with_status(student_id):
             'earned_at': next((b['earned_at'] for b in earned if b['id'] == badge['id']), None)
         })
     return result
+# ============================================================ #
+# ====== SECTION 5B: نظام المستويات الـ13 (LEVELS) ============= #
+# ============================================================ #
+SAVE_MASTERY_SCORE = 8  # الدرجة الدنيا (من 10) لاعتبار الحفظ/المراجعة "متقناً"
+
+# شروط الانتقال من كل مستوى إلى الذي يليه (level = المستوى الحالي)
+LEVELS = [
+    {'level': 1,  'name': '🌱 طالب القرآن',      'name_next': '🔵 طالب مجتهد',
+     'xp_required': 5000,   'hifz_required': 5,  'review_range': None,     'eval_days': 1, 'eval_mode': 'peer',
+     'requirement_text': 'حفظ 5 أجزاء وإتقانها'},
+    {'level': 2,  'name': '🔵 طالب مجتهد',        'name_next': '🟢 حافظ ناشئ',
+     'xp_required': 12000,  'hifz_required': 10, 'review_range': None,     'eval_days': 1, 'eval_mode': 'peer',
+     'requirement_text': 'حفظ 10 أجزاء وإتقانها ومراجعتها'},
+    {'level': 3,  'name': '🟢 حافظ ناشئ',         'name_next': '🟣 حافظ متقدم',
+     'xp_required': 25000,  'hifz_required': 15, 'review_range': None,     'eval_days': 2, 'eval_mode': 'peer',
+     'requirement_text': 'حفظ 15 جزءًا + مراجعة الأجزاء المحفوظة'},
+    {'level': 4,  'name': '🟣 حافظ متقدم',        'name_next': '🟠 حافظ متمكن',
+     'xp_required': 45000,  'hifz_required': 20, 'review_range': None,     'eval_days': 2, 'eval_mode': 'peer',
+     'requirement_text': 'حفظ 20 جزءًا وإتقانها'},
+    {'level': 5,  'name': '🟠 حافظ متمكن',        'name_next': '🔴 حافظ قوي',
+     'xp_required': 70000,  'hifz_required': 25, 'review_range': None,     'eval_days': 3, 'eval_mode': 'peer',
+     'requirement_text': 'حفظ 25 جزءًا + مراجعة شاملة'},
+    {'level': 6,  'name': '🔴 حافظ قوي',          'name_next': '💎 حافظ النخبة',
+     'xp_required': 100000, 'hifz_required': 30, 'review_range': None,     'eval_days': 3, 'eval_mode': 'peer',
+     'requirement_text': 'إكمال حفظ 30 جزءًا + اختبار ختم القرآن', 'final_test': True},
+    {'level': 7,  'name': '💎 حافظ النخبة',       'name_next': '👑 الحافظ الماهر',
+     'xp_required': 120000, 'hifz_required': 30, 'review_range': (1, 5),   'eval_days': 7, 'eval_mode': 'elite_all',
+     'requirement_text': 'مراجعة الأجزاء من 1 إلى 5'},
+    {'level': 8,  'name': '👑 الحافظ الماهر',     'name_next': '🏅 الحافظ المتقن',
+     'xp_required': 145000, 'hifz_required': 30, 'review_range': (6, 10),  'eval_days': 7, 'eval_mode': 'peers_same_or_above',
+     'requirement_text': 'مراجعة الأجزاء من 6 إلى 10'},
+    {'level': 9,  'name': '🏅 الحافظ المتقن',     'name_next': '⚜️ الحافظ المتميز',
+     'xp_required': 175000, 'hifz_required': 30, 'review_range': (11, 15), 'eval_days': 7, 'eval_mode': 'peers_same_or_above',
+     'requirement_text': 'مراجعة الأجزاء من 11 إلى 15'},
+    {'level': 10, 'name': '⚜️ الحافظ المتميز',    'name_next': '🦅 الحافظ الراسخ',
+     'xp_required': 210000, 'hifz_required': 30, 'review_range': (16, 20), 'eval_days': 7, 'eval_mode': 'peers_same_or_above',
+     'requirement_text': 'مراجعة الأجزاء من 16 إلى 20'},
+    {'level': 11, 'name': '🦅 الحافظ الراسخ',     'name_next': '🌟 الحافظ القدوة',
+     'xp_required': 250000, 'hifz_required': 30, 'review_range': (21, 25), 'eval_days': 7, 'eval_mode': 'peers_same_or_above',
+     'requirement_text': 'مراجعة الأجزاء من 21 إلى 25'},
+    {'level': 12, 'name': '🌟 الحافظ القدوة',     'name_next': '🏆 الحافظ الأعظم',
+     'xp_required': 300000, 'hifz_required': 30, 'review_range': (26, 30), 'eval_days': 7, 'eval_mode': 'peers_same_or_above',
+     'requirement_text': 'مراجعة آخر 5 أجزاء (26-30) وإكمال مراجعة الـ30 جزءًا كاملة'},
+]
+MAX_LEVEL = 13
+LEVEL_NAMES = {lv['level']: lv['name'] for lv in LEVELS}
+LEVEL_NAMES[MAX_LEVEL] = '🏆 الحافظ الأعظم'
+
+RECOMMENDATION_OPTIONS = [
+    {'code': 'promote',            'label': '🏆 أوصي بالترقية'},
+    {'code': 'promote_watch',      'label': '⭐ أوصي بالترقية مع المتابعة'},
+    {'code': 'redo_review',        'label': '🔄 أوصي بإعادة المراجعة'},
+    {'code': 'needs_improvement',  'label': '⚠️ يحتاج إلى تحسين'},
+    {'code': 'not_recommend',      'label': '❌ لا أوصي بالترقية'},
+]
+RECOMMENDATION_LABELS = {r['code']: r['label'] for r in RECOMMENDATION_OPTIONS}
+
+def get_level_name(level):
+    return LEVEL_NAMES.get(level, f'مستوى {level}')
+
+def get_level_info(level):
+    """شرط الانتقال من هذا المستوى إلى الذي يليه (None إن كان أعلى مستوى)"""
+    for lv in LEVELS:
+        if lv['level'] == level:
+            return lv
+    return None
+
+def get_lifetime_xp(student_id):
+    """إجمالي XP المكتسب مدى الحياة (لا يتأثر بالإنفاق في المتجر، بعكس الرصيد الحالي)"""
+    result = query_one(
+        "SELECT SUM(amount) as total FROM points_transactions WHERE student_id = ? AND type = 'earned'",
+        (student_id,)
+    )
+    return (result['total'] or 0) if result else 0
+
+def get_hifz_progress(student_id):
+    """تقدير تلقائي لعدد الأجزاء المحفوظة/المراجَعة اعتماداً على سجلات التقييم
+    اليومي الموجودة: كل قيمة نصية مختلفة في حقل الحفظ (أو المراجعة) حصلت على
+    درجة >= SAVE_MASTERY_SCORE تُحتسب كجزء واحد متقن. هذا تقدير وليس عداً
+    دقيقاً بالجزء (لأن الحقل نصي حر)، ويمكن للمسؤول دائماً تجاوزه بقراره."""
+    memorized = query_one("""
+        SELECT COUNT(DISTINCT curr_save) as cnt FROM daily_evaluations
+        WHERE student_id = ? AND score_save >= ? AND curr_save IS NOT NULL AND curr_save <> ''
+    """, (student_id, SAVE_MASTERY_SCORE))
+    reviewed = query_one("""
+        SELECT COUNT(DISTINCT curr_rev) as cnt FROM daily_evaluations
+        WHERE student_id = ? AND score_rev >= ? AND curr_rev IS NOT NULL AND curr_rev <> ''
+    """, (student_id, SAVE_MASTERY_SCORE))
+    return {
+        'memorized': memorized['cnt'] if memorized else 0,
+        'reviewed': reviewed['cnt'] if reviewed else 0,
+    }
+
+def check_promotion_eligibility(student):
+    """التحقق التلقائي من شرطي XP والحفظ/المراجعة (القابلين للحساب آلياً).
+    باقي الشروط (فترة التقييم + التوصيات + اعتماد المسؤول) تتم يدوياً."""
+    level = student.get('level') or 1
+    info = get_level_info(level)
+    if not info:
+        return None
+    xp = get_lifetime_xp(student['id'])
+    hifz = get_hifz_progress(student['id'])
+    if info.get('review_range'):
+        progress_value, required_value = hifz['reviewed'], 5
+    else:
+        progress_value, required_value = hifz['memorized'], info['hifz_required']
+    return {
+        'level_info': info,
+        'xp': xp,
+        'xp_required': info['xp_required'],
+        'xp_ok': xp >= info['xp_required'],
+        'progress_value': progress_value,
+        'required_value': required_value,
+        'hifz_ok': progress_value >= required_value,
+        'auto_eligible': xp >= info['xp_required'] and progress_value >= required_value,
+    }
+
+def get_active_promotion_request(student_id):
+    return query_one(
+        "SELECT * FROM promotion_requests WHERE student_id = ? AND status IN ('pending','evaluating') ORDER BY id DESC LIMIT 1",
+        (student_id,)
+    )
+
+def get_promotion_request(request_id):
+    return query_one("SELECT * FROM promotion_requests WHERE id = ?", (request_id,))
+
+def get_all_promotion_requests(status=None):
+    if status:
+        rows = query_all("""
+            SELECT pr.*, s.name as student_name, s.email
+            FROM promotion_requests pr JOIN students s ON s.id = pr.student_id
+            WHERE pr.status = ? ORDER BY pr.created_at DESC
+        """, (status,))
+    else:
+        rows = query_all("""
+            SELECT pr.*, s.name as student_name, s.email
+            FROM promotion_requests pr JOIN students s ON s.id = pr.student_id
+            ORDER BY pr.created_at DESC
+        """)
+    return rows
+
+def get_promotion_evaluators(request_id):
+    return query_all("""
+        SELECT pe.*, s.name, s.level FROM promotion_evaluators pe
+        JOIN students s ON s.id = pe.student_id
+        WHERE pe.request_id = ?
+    """, (request_id,))
+
+def get_promotion_recommendations(request_id):
+    return query_all("""
+        SELECT pr.*, COALESCE(s.name, a.name) as evaluator_name
+        FROM promotion_recommendations pr
+        LEFT JOIN students s ON pr.evaluator_type = 'student' AND pr.evaluator_id = s.id
+        LEFT JOIN admins a ON pr.evaluator_type = 'admin' AND pr.evaluator_id = a.id
+        WHERE pr.request_id = ?
+        ORDER BY pr.created_at DESC
+    """, (request_id,))
+
+def get_pending_evaluations_for_student(student_id):
+    """طلبات الترقية التي كُلّف فيها هذا الطالب كمقيّم ولم يقدّم توصيته بعد"""
+    return query_all("""
+        SELECT pr.*, s.name as student_name
+        FROM promotion_requests pr
+        JOIN promotion_evaluators pe ON pe.request_id = pr.id
+        JOIN students s ON s.id = pr.student_id
+        WHERE pe.student_id = ? AND pr.status = 'evaluating'
+          AND NOT EXISTS (
+              SELECT 1 FROM promotion_recommendations rec
+              WHERE rec.request_id = pr.id AND rec.evaluator_type = 'student' AND rec.evaluator_id = ?
+          )
+        ORDER BY pr.created_at DESC
+    """, (student_id, student_id))
+
+def notify_user(receiver_id, receiver_type, message, sender_id=None, sender_type='admin'):
+    """إرسال إشعار (رسالة نظام) لمستخدم عبر نظام الرسائل الموجود"""
+    if sender_id is None:
+        admin_row = query_one("SELECT id FROM admins ORDER BY id LIMIT 1")
+        sender_id = admin_row['id'] if admin_row else 0
+        sender_type = 'admin'
+    execute_query(
+        "INSERT INTO messages (sender_id, sender_type, receiver_id, receiver_type, message) VALUES (?, ?, ?, ?, ?)",
+        (sender_id, sender_type, receiver_id, receiver_type, message)
+    )
+
+def notify_all_admins(message, sender_id=None, sender_type='student'):
+    for a in query_all("SELECT id FROM admins"):
+        notify_user(a['id'], 'admin', message, sender_id=sender_id, sender_type=sender_type)
 # ============================================================ #
 # ====== SECTION 6: MESSAGE HELPERS =========================== #
 # ============================================================ #
@@ -1752,6 +1939,46 @@ def init_db():
     )
     """)
     
+    # جدول طلبات ترقية المستوى
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS promotion_requests (
+        id SERIAL PRIMARY KEY,
+        student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+        from_level INTEGER NOT NULL,
+        to_level INTEGER NOT NULL,
+        status VARCHAR(20) DEFAULT 'pending',
+        eval_start_date DATE,
+        eval_end_date DATE,
+        admin_note TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        decided_at TIMESTAMP
+    )
+    """)
+
+    # جدول المقيّمين المكلفين بطلب ترقية معيّن (طلاب فقط، المسؤول مقيّم دائماً بشكل ضمني)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS promotion_evaluators (
+        id SERIAL PRIMARY KEY,
+        request_id INTEGER NOT NULL REFERENCES promotion_requests(id) ON DELETE CASCADE,
+        student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+        UNIQUE(request_id, student_id)
+    )
+    """)
+
+    # جدول توصيات المقيّمين على طلب ترقية
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS promotion_recommendations (
+        id SERIAL PRIMARY KEY,
+        request_id INTEGER NOT NULL REFERENCES promotion_requests(id) ON DELETE CASCADE,
+        evaluator_type VARCHAR(10) NOT NULL,
+        evaluator_id INTEGER NOT NULL,
+        recommendation VARCHAR(30) NOT NULL,
+        note TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        UNIQUE(request_id, evaluator_type, evaluator_id)
+    )
+    """)
+
     # جدول التقييمات اليومية
     cur.execute("""
     CREATE TABLE IF NOT EXISTS daily_evaluations (
@@ -2074,7 +2301,7 @@ def init_db():
     migrations = {
         'messages': [('group_id', 'INTEGER'), ('is_group', 'INTEGER DEFAULT 0'), ('file_url', 'TEXT'), ('receiver_type', 'VARCHAR(20)')],
         'sessions': [('student_id', 'INTEGER REFERENCES students(id) ON DELETE CASCADE')],
-        'students': [('last_monthly_xp', 'VARCHAR(7)')],
+        'students': [('last_monthly_xp', 'VARCHAR(7)'), ('level', 'INTEGER DEFAULT 1')],
         'competitions': [('rewarded', 'INTEGER DEFAULT 0')],
         'assistants': [('xp_due_date', 'DATE')],
     }
@@ -4946,6 +5173,7 @@ ADMIN_DASHBOARD_HTML = '''
         <a href="{{ url_for('homework') }}">📚 واجبات</a>
         <a href="{{ url_for('competitions') }}">🏆 مسابقات</a>
         <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
+        <a href="{{ url_for('admin_promotions') }}">🎖️ الترقيات</a>
         <a href="{{ url_for('admin_analytics') }}">📈 تحليلات</a>
         <span class="separator">|</span>
         <a href="{{ url_for('admin_assistants') }}">🧑‍🤝‍🧑 مساعدين</a>
@@ -5374,6 +5602,7 @@ MANAGE_STUDENTS_HTML = '''
         <a href="{{ url_for('homework') }}">📚 واجبات</a>
         <a href="{{ url_for('competitions') }}">🏆 مسابقات</a>
         <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
+        <a href="{{ url_for('admin_promotions') }}">🎖️ الترقيات</a>
     </div>
     <div class="stats-mini">
         <div class="stat"><div class="num">{{ students|length }}</div><div class="label">👨‍🎓 إجمالي</div></div>
@@ -5791,6 +6020,7 @@ REGISTRATION_REQUESTS_HTML = '''
         <a href="{{ url_for('homework') }}">📚 واجبات</a>
         <a href="{{ url_for('competitions') }}">🏆 مسابقات</a>
         <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
+        <a href="{{ url_for('admin_promotions') }}">🎖️ الترقيات</a>
     </div>
     <div class="stats-mini">
         <div class="stat" onclick="filterTable('all', null)"><div class="num">{{ requests|length }}</div><div class="label">📋 الإجمالي</div></div>
@@ -6986,6 +7216,7 @@ EVALUATION_SESSIONS_HTML = r'''
             <a href="{{ url_for('homework') }}">📚 واجبات</a>
             <a href="{{ url_for('competitions') }}">🏆 مسابقات</a>
             <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
+        <a href="{{ url_for('admin_promotions') }}">🎖️ الترقيات</a>
         </div>
 
         <!-- ===== التبويبات ===== -->
@@ -8155,6 +8386,7 @@ HOMEWORK_HTML = '''
         <a href="{{ url_for('homework') }}" class="active">📚 واجبات</a>
         <a href="{{ url_for('competitions') }}">🏆 مسابقات</a>
         <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
+        <a href="{{ url_for('admin_promotions') }}">🎖️ الترقيات</a>
         <a href="{{ url_for('admin_session_history') }}">🗂️ سجل الحصص</a>
     </div>
     <div class="stats-mini">
@@ -9199,6 +9431,7 @@ COMPETITIONS_HTML = '''
             <a href="{{ url_for('homework') }}">📚 واجبات</a>
             <a href="{{ url_for('competitions') }}" class="active">🏆 مسابقات</a>
             <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
+        <a href="{{ url_for('admin_promotions') }}">🎖️ الترقيات</a>
             <a href="{{ url_for('admin_session_history') }}">🗂️ سجل الحصص</a>
         </div>
 
@@ -10017,6 +10250,7 @@ ANALYTICS_HTML = '''
         <a href="{{ url_for('homework') }}">📚 واجبات</a>
         <a href="{{ url_for('competitions') }}">🏆 مسابقات</a>
         <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
+        <a href="{{ url_for('admin_promotions') }}">🎖️ الترقيات</a>
         <a href="{{ url_for('admin_session_history') }}">🗂️ سجل الحصص</a>
         <a href="{{ url_for('admin_analytics') }}" class="active">📈 تحليلات</a>
     </div>
@@ -10130,6 +10364,201 @@ document.addEventListener('DOMContentLoaded', initCharts);
 console.log('📈 التحليلات جاهزة');
 console.log('📊 Charts: Performance, Distribution, Top Students');
 </script>
+</body>
+</html>
+'''
+# ============================================================ #
+# ====== الصفحة 15ب: قائمة طلبات الترقية (ADMIN_PROMOTIONS) ==== #
+# ============================================================ #
+ADMIN_PROMOTIONS_HTML = '''
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>طلبات الترقية - لوحة التحكم</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary-dark: #0a2a32; --gold: #c9a227; --gold-light: #e8c84a;
+            --glass: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.10);
+            --text-primary: #ffffff; --text-secondary: rgba(255,255,255,0.7); --text-muted: rgba(255,255,255,0.35);
+            --transition: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            --success: #4ade80; --danger: #f87171; --warning: #fbbf24; --info: #60a5fa;
+        }
+        body { font-family: 'Tajawal', sans-serif; background: var(--primary-dark); min-height: 100vh; color: var(--text-primary); }
+        .container { max-width: 1000px; margin: 0 auto; padding: 16px 20px 30px; }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 22px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; margin-bottom: 16px; }
+        .header h1 { font-size: 22px; font-weight: 800; }
+        .btn { padding: 7px 16px; border: none; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
+        .btn-outline { background: transparent; border: 1.5px solid var(--glass-border); color: var(--text-secondary); }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-gold { background: linear-gradient(135deg, var(--gold), var(--gold-light)); color: #1a1a1a; }
+        .btn-sm { padding: 4px 12px; font-size: 12px; }
+        .nav-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; padding: 10px 16px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; }
+        .nav-bar a { color: var(--text-muted); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; }
+        .nav-bar a.active { background: var(--gold); color: #1a1a1a; }
+        .filter-tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
+        .filter-tabs a { padding: 6px 16px; border-radius: 20px; font-size: 12px; text-decoration: none; color: var(--text-muted); border: 1px solid var(--glass-border); }
+        .filter-tabs a.active { background: var(--gold); color: #1a1a1a; border-color: var(--gold); }
+        .card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; padding: 16px 20px; margin-bottom: 12px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; }
+        .card .info h4 { font-size: 15px; margin-bottom: 4px; }
+        .card .info .sub { font-size: 12px; color: var(--text-muted); }
+        .status-tag { padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+        .status-tag.pending { background: rgba(251,191,36,0.15); color: var(--warning); }
+        .status-tag.evaluating { background: rgba(96,165,250,0.15); color: var(--info); }
+        .status-tag.approved { background: rgba(74,222,128,0.15); color: var(--success); }
+        .status-tag.rejected { background: rgba(248,113,113,0.15); color: var(--danger); }
+        .empty-state { text-align: center; padding: 50px 0; color: var(--text-muted); }
+        .empty-state .icon { font-size: 44px; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header"><h1>🎖️ طلبات الترقية</h1><div><a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a> <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a></div></div>
+    <div class="nav-bar">
+        <a href="{{ url_for('admin_dashboard') }}">📊 الرئيسية</a>
+        <a href="{{ url_for('manage_students') }}">👨‍🎓 الطلاب</a>
+        <a href="{{ url_for('admin_promotions') }}" class="active">🎖️ الترقيات</a>
+        <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
+    </div>
+    <div class="filter-tabs">
+        <a href="{{ url_for('admin_promotions') }}" class="{{ 'active' if not current_status }}">📋 الكل</a>
+        <a href="{{ url_for('admin_promotions', status='pending') }}" class="{{ 'active' if current_status == 'pending' }}">⏳ بانتظار البدء</a>
+        <a href="{{ url_for('admin_promotions', status='evaluating') }}" class="{{ 'active' if current_status == 'evaluating' }}">🧑‍⚖️ قيد التقييم</a>
+        <a href="{{ url_for('admin_promotions', status='approved') }}" class="{{ 'active' if current_status == 'approved' }}">✅ معتمدة</a>
+        <a href="{{ url_for('admin_promotions', status='rejected') }}" class="{{ 'active' if current_status == 'rejected' }}">❌ مرفوضة</a>
+    </div>
+    {% if requests %}
+        {% for item in requests %}
+        <div class="card">
+            <div class="info">
+                <h4>👤 {{ item.request.student_name }}</h4>
+                <div class="sub">{{ item.from_name }} ← {{ item.to_name }} · {{ item.recommendations_count }} توصية من {{ item.evaluators_count }} مقيّم</div>
+            </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+                <span class="status-tag {{ item.request.status }}">
+                    {% if item.request.status == 'pending' %}⏳ بانتظار البدء{% elif item.request.status == 'evaluating' %}🧑‍⚖️ قيد التقييم{% elif item.request.status == 'approved' %}✅ معتمدة{% else %}❌ مرفوضة{% endif %}
+                </span>
+                <a href="{{ url_for('admin_promotion_detail', request_id=item.request.id) }}" class="btn btn-gold btn-sm">فتح</a>
+            </div>
+        </div>
+        {% endfor %}
+    {% else %}
+    <div class="empty-state"><div class="icon">🎖️</div>لا توجد طلبات ترقية حالياً</div>
+    {% endif %}
+</div>
+</body>
+</html>
+'''
+# ============================================================ #
+# ====== الصفحة 15ج: تفاصيل طلب ترقية (ADMIN_PROMOTION_DETAIL) = #
+# ============================================================ #
+ADMIN_PROMOTION_DETAIL_HTML = '''
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تفاصيل طلب الترقية - لوحة التحكم</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary-dark: #0a2a32; --gold: #c9a227; --gold-light: #e8c84a;
+            --glass: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.10);
+            --text-primary: #ffffff; --text-secondary: rgba(255,255,255,0.7); --text-muted: rgba(255,255,255,0.35);
+            --success: #4ade80; --danger: #f87171; --warning: #fbbf24; --info: #60a5fa;
+        }
+        body { font-family: 'Tajawal', sans-serif; background: var(--primary-dark); min-height: 100vh; color: var(--text-primary); }
+        .container { max-width: 800px; margin: 0 auto; padding: 16px 20px 30px; }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 22px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; margin-bottom: 16px; }
+        .header h1 { font-size: 20px; font-weight: 800; }
+        .btn { padding: 7px 16px; border: none; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
+        .btn-outline { background: transparent; border: 1.5px solid var(--glass-border); color: var(--text-secondary); }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-success { background: var(--success); color: #1a1a1a; }
+        .btn-gold { background: linear-gradient(135deg, var(--gold), var(--gold-light)); color: #1a1a1a; }
+        .btn-sm { padding: 4px 12px; font-size: 12px; }
+        .panel { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; padding: 20px 22px; margin-bottom: 16px; }
+        .panel h3 { font-size: 16px; margin-bottom: 12px; }
+        .req-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--glass-border); font-size: 13px; }
+        .req-row:last-child { border-bottom: none; }
+        .req-ok { color: var(--success); font-weight: 700; }
+        .req-pending { color: var(--warning); font-weight: 700; }
+        .candidates { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; margin-bottom: 14px; }
+        .candidates label { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 6px 10px; border-radius: 8px; background: rgba(255,255,255,0.03); cursor: pointer; }
+        .rec-item { padding: 10px 0; border-bottom: 1px solid var(--glass-border); font-size: 13px; }
+        .rec-item:last-child { border-bottom: none; }
+        .rec-item .rec-name { font-weight: 700; }
+        .rec-item .rec-note { color: var(--text-muted); margin-top: 2px; }
+        textarea, select { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.04); color: #fff; font-family: inherit; font-size: 13px; margin-bottom: 10px; }
+        textarea { resize: vertical; min-height: 60px; }
+        .decision-btns { display: flex; gap: 10px; }
+        .status-tag { padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; }
+        .status-tag.pending { background: rgba(251,191,36,0.15); color: var(--warning); }
+        .status-tag.evaluating { background: rgba(96,165,250,0.15); color: var(--info); }
+        .empty-state { text-align:center; color: var(--text-muted); padding: 20px 0; font-size: 13px; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header"><h1>🎖️ {{ student.name }}: {{ from_name }} ← {{ to_name }}</h1><div><a href="{{ url_for('admin_promotions') }}" class="btn btn-outline btn-sm">⬅ الترقيات</a></div></div>
+
+    <div class="panel">
+        <h3>🎯 الشروط الآلية (XP + الحفظ/المراجعة)</h3>
+        <div class="req-row"><span>⭐ نقاط XP</span><span class="{{ 'req-ok' if eligibility.xp_ok else 'req-pending' }}">{{ eligibility.xp }} / {{ eligibility.xp_required }}</span></div>
+        <div class="req-row"><span>📖 {{ level_info.requirement_text }}</span><span class="{{ 'req-ok' if eligibility.hifz_ok else 'req-pending' }}">{{ eligibility.progress_value }} / {{ eligibility.required_value }} جزء</span></div>
+        {% if level_info.final_test %}<div class="req-row"><span>📝 اختبار ختم القرآن</span><span class="req-pending">يُحدَّد يدوياً</span></div>{% endif %}
+        <div class="req-row"><span>⏱️ مدة التقييم المقررة</span><span>{{ level_info.eval_days }} يوم/أيام</span></div>
+        <div class="req-row"><span>الحالة الحالية</span><span class="status-tag {{ req.status }}">{% if req.status == 'pending' %}⏳ بانتظار البدء{% else %}🧑‍⚖️ قيد التقييم{% endif %}</span></div>
+    </div>
+
+    {% if req.status == 'pending' %}
+    <div class="panel">
+        <h3>👥 تعيين المقيّمين وبدء فترة التقييم</h3>
+        {% if candidates %}
+        <form method="POST" action="{{ url_for('admin_promotion_start', request_id=req.id) }}">
+            <div class="candidates">
+                {% for c in candidates %}
+                <label><input type="checkbox" name="evaluator_ids" value="{{ c.id }}"> {{ c.name }} <span style="color:var(--text-muted);">(مستوى {{ c.level }})</span></label>
+                {% endfor %}
+            </div>
+            <button type="submit" class="btn btn-gold btn-sm">🚀 بدء فترة التقييم ({{ level_info.eval_days }} يوم/أيام)</button>
+        </form>
+        {% else %}
+        <div class="empty-state">لا يوجد طلاب بمستوى أعلى متاحون كمقيّمين حالياً</div>
+        {% endif %}
+    </div>
+    {% endif %}
+
+    <div class="panel">
+        <h3>📋 التوصيات الواردة ({{ recommendations|length }})</h3>
+        {% if recommendations %}
+            {% for r in recommendations %}
+            <div class="rec-item"><span class="rec-name">{{ r.evaluator_name }}</span> ({{ 'المسؤول' if r.evaluator_type == 'admin' else 'طالب' }}) — {{ recommendation_labels.get(r.recommendation, r.recommendation) }}
+                {% if r.note %}<div class="rec-note">{{ r.note }}</div>{% endif %}
+            </div>
+            {% endfor %}
+        {% else %}
+        <div class="empty-state">لا توجد توصيات بعد</div>
+        {% endif %}
+    </div>
+
+    <div class="panel">
+        <h3>✅ الاعتماد النهائي</h3>
+        <form method="POST" action="{{ url_for('admin_promotion_decide', request_id=req.id) }}">
+            <textarea name="note" placeholder="ملاحظة الاعتماد النهائية (تُرسل للطالب)"></textarea>
+            <div class="decision-btns">
+                <button type="submit" name="decision" value="approve" class="btn btn-success btn-sm">🏆 اعتماد الترقية</button>
+                <button type="submit" name="decision" value="reject" class="btn btn-danger btn-sm">❌ رفض الترقية</button>
+            </div>
+        </form>
+    </div>
+</div>
 </body>
 </html>
 '''
@@ -10321,6 +10750,7 @@ ADMIN_PROFILE_HTML = '''
         <a href="{{ url_for('homework') }}">📚 واجبات</a>
         <a href="{{ url_for('competitions') }}">🏆 مسابقات</a>
         <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
+        <a href="{{ url_for('admin_promotions') }}">🎖️ الترقيات</a>
         <a href="{{ url_for('admin_session_history') }}">🗂️ سجل الحصص</a>
         <a href="{{ url_for('admin_analytics') }}">📈 تحليلات</a>
         <a href="{{ url_for('admin_profile') }}" class="active">👤 ملفي</a>
@@ -10966,6 +11396,7 @@ ASSISTANTS_HTML = '''
             <a href="{{ url_for('homework') }}">📚 واجبات</a>
             <a href="{{ url_for('competitions') }}">🏆 مسابقات</a>
             <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
+        <a href="{{ url_for('admin_promotions') }}">🎖️ الترقيات</a>
             <a href="{{ url_for('admin_session_history') }}">🗂️ سجل الحصص</a>
             <a href="{{ url_for('admin_analytics') }}">📈 تحليلات</a>
             <a href="{{ url_for('admin_assistants') }}" class="active">🧑‍🤝‍🧑 مساعدين</a>
@@ -13824,6 +14255,7 @@ ADMIN_DUELS_HTML = '''
         <a href="{{ url_for('homework') }}">📚 واجبات</a>
         <a href="{{ url_for('competitions') }}">🏆 مسابقات</a>
         <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
+        <a href="{{ url_for('admin_promotions') }}">🎖️ الترقيات</a>
         <a href="{{ url_for('admin_session_history') }}">🗂️ سجل الحصص</a>
         <a href="{{ url_for('admin_analytics') }}">📈 تحليلات</a>
         <a href="{{ url_for('admin_assistants') }}">🧑‍🤝‍🧑 مساعدين</a>
@@ -14700,6 +15132,7 @@ ADMIN_STORE_HTML = '''
             <a href="{{ url_for('homework') }}">📚 واجبات</a>
             <a href="{{ url_for('competitions') }}">🏆 مسابقات</a>
             <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
+        <a href="{{ url_for('admin_promotions') }}">🎖️ الترقيات</a>
             <a href="{{ url_for('admin_session_history') }}">🗂️ سجل الحصص</a>
             <a href="{{ url_for('admin_analytics') }}">📈 تحليلات</a>
             <a href="{{ url_for('admin_assistants') }}">🧑‍🤝‍🧑 مساعدين</a>
@@ -15447,6 +15880,8 @@ STUDENT_DASHBOARD_HTML = '''
         <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
         <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
         <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
+        <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
         <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -16854,6 +17289,8 @@ STUDENT_PROFILE_HTML = '''
         <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
         <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
         <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
+        <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
         <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -17572,6 +18009,8 @@ STUDENT_REPORT_HTML = '''
             <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
+        <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
             <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -18830,6 +19269,8 @@ STUDENT_HOMEWORK_HTML = '''
             <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
+        <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
             <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -19942,6 +20383,8 @@ STUDENT_COMPETITIONS_HTML = '''
             <a href="{{ url_for('student_competitions') }}" class="active">🏆 مسابقاتي</a>
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
+        <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
             <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -21272,6 +21715,8 @@ STUDENT_MESSAGES_HTML = '''
             <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
             <a href="{{ url_for('student_messages') }}" class="active">💬 رسائلي</a>
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
+        <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
             <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -22217,6 +22662,8 @@ STUDENT_POINTS_HTML = '''
         <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
         <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
         <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
+        <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
         <a href="{{ url_for('student_points') }}" class="active">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
         <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -22285,6 +22732,265 @@ function showToast(type, title, message) {
 console.log('💰 رصيدي جاهز');
 console.log('📊 إحصائيات: ' + ({{ earned|default(0, true) }} + ' مكتسب، ' + {{ spent|default(0, true) }} + ' منفق'));
 </script>
+</body>
+</html>
+'''
+# ============================================================ #
+# ====== الصفحة 30ب: مستوى الطالب (STUDENT_LEVEL) =============== #
+# ============================================================ #
+STUDENT_LEVEL_HTML = '''
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>مستواي - حلقتي زتاي</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary: #134e5e; --primary-light: #1a7a8e; --primary-dark: #0a2a32;
+            --gold: #c9a227; --gold-light: #e8c84a; --gold-glow: rgba(201,162,39,0.15);
+            --glass: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.10);
+            --text-primary: #ffffff; --text-secondary: rgba(255,255,255,0.7); --text-muted: rgba(255,255,255,0.35);
+            --shadow: 0 8px 32px rgba(0,0,0,0.3); --transition: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            --success: #4ade80; --danger: #f87171; --warning: #fbbf24; --info: #60a5fa;
+        }
+        body { font-family: 'Tajawal', sans-serif; background: var(--primary-dark); min-height: 100vh; color: var(--text-primary); overflow-x: hidden; }
+        .bg-layer { position: fixed; inset: 0; z-index: 0; pointer-events: none;
+            background: radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
+                        radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent); }
+        .container { max-width: 900px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 22px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; margin-bottom: 16px; backdrop-filter: blur(10px); }
+        .header h1 { font-size: 22px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
+        .header h1 .highlight { background: linear-gradient(135deg, var(--gold-light), var(--primary-light)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .header .actions { display: flex; gap: 8px; flex-wrap: wrap; }
+        .btn { padding: 7px 16px; border: none; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all var(--transition); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
+        .btn-primary { background: var(--primary-light); color: #fff; }
+        .btn-gold { background: linear-gradient(135deg, var(--gold), var(--gold-light)); color: #1a1a1a; }
+        .btn-outline { background: transparent; border: 1.5px solid var(--glass-border); color: var(--text-secondary); }
+        .btn-outline:hover { border-color: var(--gold); color: #fff; }
+        .btn-success { background: var(--success); color: #1a1a1a; }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-sm { padding: 4px 12px; font-size: 12px; }
+        .btn:disabled { opacity: 0.4; cursor: not-allowed; transform: none; box-shadow: none; }
+        .nav-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; padding: 10px 16px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; backdrop-filter: blur(10px); }
+        .nav-bar a { color: var(--text-muted); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; transition: all 0.3s ease; }
+        .nav-bar a:hover { background: rgba(255,255,255,0.04); color: var(--text-primary); }
+        .nav-bar a.active { background: var(--gold); color: #1a1a1a; }
+        .level-display { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 16px; padding: 28px 32px; backdrop-filter: blur(10px); margin-bottom: 20px; text-align: center; }
+        .level-display .badge-emoji { font-size: 56px; }
+        .level-display .big-name { font-size: 26px; font-weight: 900; background: linear-gradient(135deg, var(--gold-light), var(--gold)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; margin-top: 6px; }
+        .level-display .label { font-size: 14px; color: var(--text-muted); margin-top: 4px; }
+        .panel { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; padding: 20px 22px; backdrop-filter: blur(10px); margin-bottom: 16px; }
+        .panel h3 { font-size: 17px; font-weight: 700; margin-bottom: 14px; }
+        .req-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid var(--glass-border); }
+        .req-row:last-child { border-bottom: none; }
+        .req-row .req-label { font-size: 14px; color: var(--text-secondary); }
+        .req-row .req-value { font-size: 14px; font-weight: 700; }
+        .req-ok { color: var(--success); }
+        .req-pending { color: var(--warning); }
+        .progress-bar { width: 100%; height: 10px; background: rgba(255,255,255,0.08); border-radius: 20px; overflow: hidden; margin-top: 6px; }
+        .progress-bar .fill { height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-light)); border-radius: 20px; transition: width 0.6s ease; }
+        .status-tag { padding: 4px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
+        .status-tag.pending { background: rgba(251,191,36,0.15); color: var(--warning); }
+        .status-tag.evaluating { background: rgba(96,165,250,0.15); color: var(--info); }
+        .status-tag.approved { background: rgba(74,222,128,0.15); color: var(--success); }
+        .status-tag.rejected { background: rgba(248,113,113,0.15); color: var(--danger); }
+        .rec-item { padding: 10px 0; border-bottom: 1px solid var(--glass-border); font-size: 13px; }
+        .rec-item:last-child { border-bottom: none; }
+        .rec-item .rec-name { font-weight: 700; }
+        .rec-item .rec-note { color: var(--text-muted); margin-top: 2px; }
+        .empty-state { text-align: center; padding: 30px 0; color: var(--text-muted); }
+        .empty-state .icon { font-size: 40px; margin-bottom: 10px; }
+        .flash-msg { padding: 10px 16px; border-radius: 10px; margin-bottom: 12px; font-size: 13px; }
+        .flash-msg.success { background: rgba(74,222,128,0.12); color: var(--success); border: 1px solid rgba(74,222,128,0.3); }
+        .flash-msg.danger { background: rgba(248,113,113,0.12); color: var(--danger); border: 1px solid rgba(248,113,113,0.3); }
+        .flash-msg.warning { background: rgba(251,191,36,0.12); color: var(--warning); border: 1px solid rgba(251,191,36,0.3); }
+        @media (max-width: 768px) {
+            .header { flex-direction: column; align-items: stretch; text-align: center; }
+            .header .actions { justify-content: center; }
+            .container { padding: 12px; }
+            .nav-bar { justify-content: center; }
+            .req-row { flex-direction: column; align-items: flex-start; gap: 4px; }
+        }
+    </style>
+</head>
+<body>
+    {{ theme_style(student)|safe }}
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+<div class="bg-layer"></div>
+<div class="container">
+    <div class="header"><h1>🎖️ <span class="highlight">مستواي</span></h1><div class="actions"><a href="{{ url_for('student_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a><a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a></div></div>
+    <div class="nav-bar">
+        <a href="{{ url_for('student_dashboard') }}">📊 الرئيسية</a>
+        <a href="{{ url_for('student_homework') }}">📚 واجباتي</a>
+        <a href="{{ url_for('student_report') }}">📊 تقريري</a>
+        <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
+        <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
+        <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
+        <a href="{{ url_for('student_level') }}" class="active">🎖️ مستواي</a>
+        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
+        <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
+        <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
+        <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
+        <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
+    </div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, msg in messages %}<div class="flash-msg {{ category }}">{{ msg }}</div>{% endfor %}
+    {% endwith %}
+    <div class="level-display">
+        <div class="badge-emoji">{{ level_name.split(' ')[0] }}</div>
+        <div class="big-name">{{ level_name }}</div>
+        <div class="label">المستوى {{ level }} من {{ max_level }}</div>
+    </div>
+
+    {% if active_request %}
+    <div class="panel">
+        <h3>📋 طلب الترقية الحالي</h3>
+        <div class="req-row"><span class="req-label">الحالة</span>
+            <span class="status-tag {{ active_request.status }}">
+                {% if active_request.status == 'pending' %}⏳ بانتظار المسؤول{% elif active_request.status == 'evaluating' %}🧑‍⚖️ قيد التقييم{% endif %}
+            </span>
+        </div>
+        {% if active_request.eval_start_date %}
+        <div class="req-row"><span class="req-label">فترة التقييم</span><span class="req-value">{{ active_request.eval_start_date }} → {{ active_request.eval_end_date }}</span></div>
+        {% endif %}
+        {% if recommendations %}
+        <div style="margin-top:10px;">
+            <div class="req-label" style="margin-bottom:6px;">التوصيات الواردة حتى الآن:</div>
+            {% for r in recommendations %}
+            <div class="rec-item"><span class="rec-name">{{ r.evaluator_name }}</span> — {{ recommendation_labels.get(r.recommendation, r.recommendation) }}
+                {% if r.note %}<div class="rec-note">{{ r.note }}</div>{% endif %}
+            </div>
+            {% endfor %}
+        </div>
+        {% endif %}
+    </div>
+    {% elif eligibility %}
+    <div class="panel">
+        <h3>🎯 شروط الانتقال إلى {{ eligibility.level_info.name_next }}</h3>
+        <div class="req-row">
+            <span class="req-label">⭐ نقاط XP</span>
+            <span class="req-value {{ 'req-ok' if eligibility.xp_ok else 'req-pending' }}">{{ eligibility.xp }} / {{ eligibility.xp_required }} {% if eligibility.xp_ok %}✅{% endif %}</span>
+        </div>
+        <div class="progress-bar"><div class="fill" style="width: {{ [100, (eligibility.xp / eligibility.xp_required * 100) if eligibility.xp_required else 100]|min }}%;"></div></div>
+        <div class="req-row" style="margin-top:14px;">
+            <span class="req-label">📖 {{ eligibility.level_info.requirement_text }}</span>
+            <span class="req-value {{ 'req-ok' if eligibility.hifz_ok else 'req-pending' }}">{{ eligibility.progress_value }} / {{ eligibility.required_value }} جزء {% if eligibility.hifz_ok %}✅{% endif %}</span>
+        </div>
+        <div class="progress-bar"><div class="fill" style="width: {{ [100, (eligibility.progress_value / eligibility.required_value * 100) if eligibility.required_value else 100]|min }}%;"></div></div>
+        {% if eligibility.level_info.final_test %}
+        <div class="req-row" style="margin-top:14px;"><span class="req-label">📝 اختبار ختم القرآن</span><span class="req-value req-pending">يحدده المسؤول أثناء التقييم</span></div>
+        {% endif %}
+        <div style="margin-top:18px;text-align:center;">
+            <form method="POST" action="{{ url_for('student_level_request') }}">
+                <button type="submit" class="btn btn-gold" {% if not eligibility.auto_eligible %}disabled{% endif %}>🚀 طلب الترقية</button>
+            </form>
+            {% if not eligibility.auto_eligible %}
+            <div style="font-size:12px;color:var(--text-muted);margin-top:8px;">أكمل الشروط أعلاه أولاً ليصبح الزر متاحاً</div>
+            {% endif %}
+        </div>
+    </div>
+    {% else %}
+    <div class="panel"><div class="empty-state"><div class="icon">🏆</div>أنت في أعلى مستوى — الحافظ الأعظم!</div></div>
+    {% endif %}
+
+    {% if history %}
+    <div class="panel">
+        <h3>🗂️ سجل طلبات الترقية السابقة</h3>
+        {% for h in history %}
+        <div class="req-row">
+            <span class="req-label">مستوى {{ h.from_level }} ← {{ h.to_level }}</span>
+            <span class="status-tag {{ h.status }}">{% if h.status == 'approved' %}✅ اعتُمدت{% else %}❌ مرفوضة{% endif %}</span>
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+</div>
+</body>
+</html>
+'''
+# ============================================================ #
+# ====== الصفحة 30ج: طلبات التقييم الموكلة للطالب (PROMOTIONS) == #
+# ============================================================ #
+STUDENT_PROMOTIONS_HTML = '''
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>طلبات التقييم - حلقتي زتاي</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary-dark: #0a2a32; --gold: #c9a227; --gold-light: #e8c84a; --gold-glow: rgba(201,162,39,0.15);
+            --glass: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.10);
+            --text-primary: #ffffff; --text-secondary: rgba(255,255,255,0.7); --text-muted: rgba(255,255,255,0.35);
+            --transition: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+            --success: #4ade80; --danger: #f87171; --warning: #fbbf24; --info: #60a5fa;
+        }
+        body { font-family: 'Tajawal', sans-serif; background: var(--primary-dark); min-height: 100vh; color: var(--text-primary); }
+        .container { max-width: 900px; margin: 0 auto; padding: 16px 20px 30px; }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 22px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; margin-bottom: 16px; }
+        .header h1 { font-size: 22px; font-weight: 800; }
+        .btn { padding: 7px 16px; border: none; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all var(--transition); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
+        .btn-outline { background: transparent; border: 1.5px solid var(--glass-border); color: var(--text-secondary); }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-gold { background: linear-gradient(135deg, var(--gold), var(--gold-light)); color: #1a1a1a; }
+        .btn-sm { padding: 4px 12px; font-size: 12px; }
+        .nav-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; padding: 10px 16px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; }
+        .nav-bar a { color: var(--text-muted); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; }
+        .nav-bar a.active { background: var(--gold); color: #1a1a1a; }
+        .card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; }
+        .card h4 { font-size: 15px; margin-bottom: 6px; }
+        .card .sub { font-size: 13px; color: var(--text-muted); margin-bottom: 12px; }
+        select, textarea { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--glass-border); background: rgba(255,255,255,0.04); color: #fff; font-family: inherit; font-size: 13px; margin-bottom: 8px; }
+        textarea { resize: vertical; min-height: 60px; }
+        .empty-state { text-align: center; padding: 40px 0; color: var(--text-muted); }
+        .empty-state .icon { font-size: 44px; margin-bottom: 10px; }
+        .flash-msg { padding: 10px 16px; border-radius: 10px; margin-bottom: 12px; font-size: 13px; }
+        .flash-msg.success { background: rgba(74,222,128,0.12); color: var(--success); }
+        .flash-msg.danger { background: rgba(248,113,113,0.12); color: var(--danger); }
+    </style>
+</head>
+<body>
+    {{ theme_style(student)|safe }}
+<div class="container">
+    <div class="header"><h1>⚖️ طلبات التقييم الموكلة إليّ</h1><div><a href="{{ url_for('student_level') }}" class="btn btn-outline btn-sm">⬅ مستواي</a> <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a></div></div>
+    <div class="nav-bar">
+        <a href="{{ url_for('student_dashboard') }}">📊 الرئيسية</a>
+        <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_promotions') }}" class="active">⚖️ طلبات التقييم</a>
+    </div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% for category, msg in messages %}<div class="flash-msg {{ category }}">{{ msg }}</div>{% endfor %}
+    {% endwith %}
+    {% if pending %}
+        {% for item in pending %}
+        <div class="card">
+            <h4>👤 {{ item.student.name }}</h4>
+            <div class="sub">ترقية من {{ item.from_name }} إلى {{ item.to_name }}</div>
+            <form method="POST" action="{{ url_for('student_promotion_recommend', request_id=item.request.id) }}">
+                <select name="recommendation" required>
+                    <option value="">-- اختر توصيتك --</option>
+                    {% for opt in recommendation_options %}
+                    <option value="{{ opt.code }}">{{ opt.label }}</option>
+                    {% endfor %}
+                </select>
+                <textarea name="note" placeholder="ملاحظة (اختياري)"></textarea>
+                <button type="submit" class="btn btn-gold btn-sm">✅ إرسال التوصية</button>
+            </form>
+        </div>
+        {% endfor %}
+    {% else %}
+    <div class="card"><div class="empty-state"><div class="icon">✅</div>لا توجد طلبات تقييم بانتظارك حالياً</div></div>
+    {% endif %}
+</div>
 </body>
 </html>
 '''
@@ -23037,6 +23743,8 @@ STUDENT_STORE_HTML = '''
             <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
+        <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}" class="active">🛍️ المتجر</a>
             <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
@@ -24037,6 +24745,8 @@ STUDENT_DUELS_HTML = '''
             <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
+        <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
             <a href="{{ url_for('student_duels') }}" class="active">⚔️ تحدياتي</a>
@@ -24463,6 +25173,133 @@ def admin_dashboard():
                                    active_rate=stats['active_rate'], new_students_today=stats['new_students_today'],
                                    recent_evaluations=recent_evaluations, recent_activities=recent_activities,
                                    notifications_count=unread_messages, datetime=datetime)
+@app.route('/admin/promotions')
+@login_required('admin')
+def admin_promotions():
+    """قائمة طلبات ترقية المستوى"""
+    status = request.args.get('status')
+    requests_list = get_all_promotion_requests(status)
+    enriched = []
+    for req in requests_list:
+        info = get_level_info(req['from_level'])
+        evaluators = get_promotion_evaluators(req['id'])
+        recs = get_promotion_recommendations(req['id'])
+        enriched.append({
+            'request': req,
+            'from_name': get_level_name(req['from_level']),
+            'to_name': get_level_name(req['to_level']),
+            'eval_days': info['eval_days'] if info else 1,
+            'evaluators_count': len(evaluators),
+            'recommendations_count': len(recs),
+        })
+    return render_template_string(ADMIN_PROMOTIONS_HTML,
+                                   admin=get_current_user(),
+                                   requests=enriched,
+                                   current_status=status,
+                                   messages_count=get_unread_count(session['user_id'], 'admin'),
+                                   datetime=datetime)
+@app.route('/admin/promotions/<int:request_id>')
+@login_required('admin')
+def admin_promotion_detail(request_id):
+    """تفاصيل طلب ترقية: الشروط الآلية، المقيّمون، التوصيات، والاعتماد النهائي"""
+    req = get_promotion_request(request_id)
+    if not req:
+        flash('الطلب غير موجود', 'danger')
+        return redirect(url_for('admin_promotions'))
+    student = query_one("SELECT * FROM students WHERE id = ?", (req['student_id'],))
+    eligibility = check_promotion_eligibility(student)
+    info = get_level_info(req['from_level'])
+    evaluators = get_promotion_evaluators(request_id)
+    evaluator_ids = [e['student_id'] for e in evaluators]
+    recommendations = get_promotion_recommendations(request_id)
+    # المرشحون الممكنون كمقيّمين: طلاب نشطون بمستوى أعلى من مستوى الطالب صاحب الطلب
+    candidates = query_all("""
+        SELECT id, name, level FROM students
+        WHERE status = 'active' AND level > ? AND id != ?
+        ORDER BY level DESC, name
+    """, (req['from_level'], req['student_id']))
+    return render_template_string(ADMIN_PROMOTION_DETAIL_HTML,
+                                   admin=get_current_user(),
+                                   req=req,
+                                   student=student,
+                                   eligibility=eligibility,
+                                   level_info=info,
+                                   from_name=get_level_name(req['from_level']),
+                                   to_name=get_level_name(req['to_level']),
+                                   evaluators=evaluators,
+                                   evaluator_ids=evaluator_ids,
+                                   recommendations=recommendations,
+                                   recommendation_labels=RECOMMENDATION_LABELS,
+                                   candidates=candidates,
+                                   messages_count=get_unread_count(session['user_id'], 'admin'),
+                                   datetime=datetime)
+@app.route('/admin/promotions/<int:request_id>/start', methods=['POST'])
+@login_required('admin')
+def admin_promotion_start(request_id):
+    """تعيين المقيّمين وبدء فترة التقييم"""
+    req = get_promotion_request(request_id)
+    if not req or req['status'] != 'pending':
+        flash('لا يمكن بدء التقييم لهذا الطلب', 'danger')
+        return redirect(url_for('admin_promotions'))
+    student = query_one("SELECT * FROM students WHERE id = ?", (req['student_id'],))
+    info = get_level_info(req['from_level'])
+    eval_days = info['eval_days'] if info else 1
+    evaluator_ids = request.form.getlist('evaluator_ids')
+    if not evaluator_ids:
+        flash('اختر مقيّماً واحداً على الأقل', 'danger')
+        return redirect(url_for('admin_promotion_detail', request_id=request_id))
+    start_date = datetime.now().date()
+    end_date = start_date + timedelta(days=eval_days)
+    execute_query(
+        "UPDATE promotion_requests SET status = 'evaluating', eval_start_date = ?, eval_end_date = ? WHERE id = ?",
+        (start_date, end_date, request_id)
+    )
+    for sid in evaluator_ids:
+        execute_query(
+            "INSERT INTO promotion_evaluators (request_id, student_id) VALUES (?, ?) ON CONFLICT DO NOTHING",
+            (request_id, int(sid))
+        )
+        notify_user(int(sid), 'student',
+                     f"🧑‍⚖️ أنت مكلّف بتقييم الطالب {student['name']} لترقيته إلى {info['name_next']}. الرجاء تقديم توصيتك من صفحة (طلبات التقييم).",
+                     sender_type='admin')
+    notify_user(student['id'], 'student',
+                f"⏳ بدأت فترة تقييم طلب ترقيتك إلى {info['name_next']}، وتستمر {eval_days} يوم/أيام.",
+                sender_type='admin')
+    flash('تم تعيين المقيّمين وبدء فترة التقييم', 'success')
+    return redirect(url_for('admin_promotion_detail', request_id=request_id))
+@app.route('/admin/promotions/<int:request_id>/decide', methods=['POST'])
+@login_required('admin')
+def admin_promotion_decide(request_id):
+    """اعتماد المسؤول النهائي: قبول أو رفض الترقية"""
+    req = get_promotion_request(request_id)
+    if not req or req['status'] not in ('pending', 'evaluating'):
+        flash('لا يمكن اتخاذ قرار على هذا الطلب', 'danger')
+        return redirect(url_for('admin_promotions'))
+    decision = request.form.get('decision')
+    note = request.form.get('note', '')
+    student = query_one("SELECT * FROM students WHERE id = ?", (req['student_id'],))
+    if decision == 'approve':
+        execute_query(
+            "UPDATE promotion_requests SET status = 'approved', admin_note = ?, decided_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (note, request_id)
+        )
+        execute_query("UPDATE students SET level = ? WHERE id = ?", (req['to_level'], student['id']))
+        notify_user(student['id'], 'student',
+                    f"🎉 مبروك! تمت ترقيتك إلى {get_level_name(req['to_level'])} باعتماد المسؤول.",
+                    sender_type='admin')
+        flash('تمت الترقية بنجاح', 'success')
+    elif decision == 'reject':
+        execute_query(
+            "UPDATE promotion_requests SET status = 'rejected', admin_note = ?, decided_at = CURRENT_TIMESTAMP WHERE id = ?",
+            (note, request_id)
+        )
+        notify_user(student['id'], 'student',
+                    f"لم تُعتمد ترقيتك هذه المرة. ملاحظة المسؤول: {note or 'لا توجد ملاحظات إضافية'}. يمكنك إعادة المحاولة لاحقاً.",
+                    sender_type='admin')
+        flash('تم رفض طلب الترقية', 'warning')
+    else:
+        flash('قرار غير صالح', 'danger')
+    return redirect(url_for('admin_promotions'))
 @app.route('/admin/students', methods=['GET', 'POST'])
 @login_required('admin')
 def manage_students():
@@ -26220,6 +27057,102 @@ def student_points():
                                    earned=earned,
                                    spent=spent,
                                    datetime=datetime)
+@app.route('/student/level')
+@login_required('student')
+def student_level():
+    """صفحة مستوى الطالب: تقدّمه نحو المستوى التالي وطلب الترقية"""
+    student = get_current_user()
+    level = student.get('level') or 1
+    eligibility = check_promotion_eligibility(student)
+    active_request = get_active_promotion_request(student['id'])
+    recommendations = get_promotion_recommendations(active_request['id']) if active_request else []
+    history = query_all("""
+        SELECT * FROM promotion_requests WHERE student_id = ? AND status IN ('approved','rejected')
+        ORDER BY created_at DESC
+    """, (student['id'],))
+    return render_template_string(STUDENT_LEVEL_HTML,
+                                   student=student,
+                                   level=level,
+                                   level_name=get_level_name(level),
+                                   eligibility=eligibility,
+                                   active_request=active_request,
+                                   recommendations=recommendations,
+                                   recommendation_labels=RECOMMENDATION_LABELS,
+                                   history=history,
+                                   max_level=MAX_LEVEL,
+                                   datetime=datetime)
+@app.route('/student/level/request', methods=['POST'])
+@login_required('student')
+def student_level_request():
+    """طلب ترقية المستوى من واجهة الطالب"""
+    student = get_current_user()
+    level = student.get('level') or 1
+    if get_active_promotion_request(student['id']):
+        flash('لديك بالفعل طلب ترقية قيد المعالجة', 'warning')
+        return redirect(url_for('student_level'))
+    info = get_level_info(level)
+    if not info:
+        flash('أنت بالفعل في أعلى مستوى', 'warning')
+        return redirect(url_for('student_level'))
+    eligibility = check_promotion_eligibility(student)
+    if not eligibility or not eligibility['auto_eligible']:
+        flash('لم تكتمل بعد شروط الحفظ/المراجعة أو نقاط XP المطلوبة لهذا المستوى', 'danger')
+        return redirect(url_for('student_level'))
+    request_id = execute_query(
+        "INSERT INTO promotion_requests (student_id, from_level, to_level, status) VALUES (?, ?, ?, 'pending')",
+        (student['id'], level, level + 1)
+    )
+    notify_all_admins(
+        f"📩 الطالب {student['name']} تقدّم بطلب ترقية من {info['name']} إلى {info['name_next']}",
+        sender_id=student['id'], sender_type='student'
+    )
+    flash('تم إرسال طلب الترقية إلى المسؤول', 'success')
+    return redirect(url_for('student_level'))
+@app.route('/student/promotions')
+@login_required('student')
+def student_promotions():
+    """طلبات الترقية التي كُلّف فيها الطالب الحالي كمقيّم"""
+    student = get_current_user()
+    pending = get_pending_evaluations_for_student(student['id'])
+    pending_detailed = []
+    for req in pending:
+        req_student = query_one("SELECT * FROM students WHERE id = ?", (req['student_id'],))
+        pending_detailed.append({
+            'request': req,
+            'student': req_student,
+            'from_name': get_level_name(req['from_level']),
+            'to_name': get_level_name(req['to_level']),
+        })
+    return render_template_string(STUDENT_PROMOTIONS_HTML,
+                                   student=student,
+                                   pending=pending_detailed,
+                                   recommendation_options=RECOMMENDATION_OPTIONS,
+                                   datetime=datetime)
+@app.route('/student/promotions/<int:request_id>/recommend', methods=['POST'])
+@login_required('student')
+def student_promotion_recommend(request_id):
+    """تقديم توصية طالب مُقيّم بخصوص طلب ترقية"""
+    student = get_current_user()
+    is_evaluator = query_one(
+        "SELECT 1 FROM promotion_evaluators WHERE request_id = ? AND student_id = ?",
+        (request_id, student['id'])
+    )
+    if not is_evaluator:
+        flash('غير مصرح لك بتقييم هذا الطلب', 'danger')
+        return redirect(url_for('student_promotions'))
+    recommendation = request.form.get('recommendation')
+    note = request.form.get('note', '')
+    if recommendation not in RECOMMENDATION_LABELS:
+        flash('توصية غير صالحة', 'danger')
+        return redirect(url_for('student_promotions'))
+    execute_query("""
+        INSERT INTO promotion_recommendations (request_id, evaluator_type, evaluator_id, recommendation, note)
+        VALUES (?, 'student', ?, ?, ?)
+        ON CONFLICT (request_id, evaluator_type, evaluator_id)
+        DO UPDATE SET recommendation = EXCLUDED.recommendation, note = EXCLUDED.note, created_at = CURRENT_TIMESTAMP
+    """, (request_id, student['id'], recommendation, note))
+    flash('تم إرسال توصيتك بنجاح', 'success')
+    return redirect(url_for('student_promotions'))
 @app.route('/student/messages')
 @login_required('student')
 def student_messages():
