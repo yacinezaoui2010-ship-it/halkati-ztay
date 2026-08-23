@@ -35,41 +35,65 @@ def shade_hex(hex_color, factor):
         return hex_color
 
 def build_theme_style(student):
-    """يبني كتلة CSS كاملة (:root overrides) بناءً على لون/تدرج الطالب المفعّل"""
+    """يبني كتلة CSS كاملة (:root overrides) بناءً على لون/تدرج الطالب المفعّل،
+    بالإضافة إلى تجاوزات الوضع الفاتح (إن كان مفعّلاً) وزر تبديل الوضع العائم"""
     if not student:
         return ''
+    css_parts = []
     tc = student.get('theme_color') if hasattr(student, 'get') else None
-    if not tc:
-        return ''
+    if tc:
+        if tc.startswith('grad:'):
+            try:
+                c1, c2 = tc[5:].split(',')
+                gold, gold_light = c1, c2
+                primary = f'linear-gradient(135deg, {shade_hex(c1, 0.5)}, {shade_hex(c2, 0.5)})'
+                primary_light = f'linear-gradient(135deg, {shade_hex(c1, 0.7)}, {shade_hex(c2, 0.7)})'
+                primary_dark = f'linear-gradient(135deg, {shade_hex(c1, 0.22)}, {shade_hex(c2, 0.22)})'
+                gold_glow = c1 + '26'
+                css_parts.append(
+                    ':root{'
+                    f'--gold:{gold} !important;--gold-light:{gold_light} !important;--gold-glow:{gold_glow} !important;'
+                    f'--primary:{primary} !important;--primary-light:{primary_light} !important;--primary-dark:{primary_dark} !important;'
+                    '}'
+                )
+            except Exception:
+                pass
+        else:
+            gold = tc
+            gold_light = shade_hex(tc, 1.3)
+            primary = shade_hex(tc, 0.45)
+            primary_light = shade_hex(tc, 0.65)
+            primary_dark = shade_hex(tc, 0.22)
+            gold_glow = tc + '26'
+            css_parts.append(
+                ':root{'
+                f'--gold:{gold} !important;--gold-light:{gold_light} !important;--gold-glow:{gold_glow} !important;'
+                f'--primary:{primary} !important;--primary-light:{primary_light} !important;--primary-dark:{primary_dark} !important;'
+                '}'
+            )
 
-    if tc.startswith('grad:'):
-        try:
-            c1, c2 = tc[5:].split(',')
-        except Exception:
-            return ''
-        gold, gold_light = c1, c2
-        primary = f'linear-gradient(135deg, {shade_hex(c1, 0.5)}, {shade_hex(c2, 0.5)})'
-        primary_light = f'linear-gradient(135deg, {shade_hex(c1, 0.7)}, {shade_hex(c2, 0.7)})'
-        primary_dark = f'linear-gradient(135deg, {shade_hex(c1, 0.22)}, {shade_hex(c2, 0.22)})'
-        gold_glow = c1 + '26'
-    else:
-        gold = tc
-        gold_light = shade_hex(tc, 1.3)
-        primary = shade_hex(tc, 0.45)
-        primary_light = shade_hex(tc, 0.65)
-        primary_dark = shade_hex(tc, 0.22)
-        gold_glow = tc + '26'
-
-    return (
-        '<style>:root{'
-        f'--gold:{gold} !important;'
-        f'--gold-light:{gold_light} !important;'
-        f'--gold-glow:{gold_glow} !important;'
-        f'--primary:{primary} !important;'
-        f'--primary-light:{primary_light} !important;'
-        f'--primary-dark:{primary_dark} !important;'
-        '}</style>'
+    mode = (student.get('theme_mode') if hasattr(student, 'get') else None) or 'dark'
+    toggle_html = ''
+    if mode == 'light':
+        # تجاوز متغيرات الخلفية/النص المشتركة بين كل الصفحات لتفعيل الوضع النهاري
+        css_parts.append(
+            ':root{'
+            '--primary-dark:#eef2f4 !important;--text-primary:#132229 !important;'
+            '--text-secondary:rgba(19,34,41,0.75) !important;--text-muted:rgba(19,34,41,0.45) !important;'
+            '--glass:rgba(19,34,41,0.045) !important;--glass-border:rgba(19,34,41,0.12) !important;'
+            '}'
+        )
+    toggle_icon = '☀️' if mode == 'light' else '🌙'
+    toggle_html = (
+        '<form method="POST" action="/student/toggle_theme_mode" '
+        'style="position:fixed;top:10px;left:60px;z-index:9999;">'
+        f'<button type="submit" title="تبديل الوضع الفاتح/الداكن" '
+        'style="width:36px;height:36px;border-radius:10px;border:1px solid rgba(255,255,255,0.2);'
+        'background:rgba(0,0,0,0.25);color:inherit;font-size:16px;cursor:pointer;'
+        f'backdrop-filter:blur(6px);">{toggle_icon}</button></form>'
     )
+    style_block = f'<style>{"".join(css_parts)}</style>' if css_parts else ''
+    return style_block + toggle_html
 
 def build_row_bg_style(theme_color):
     """لون خلفية خفيف لسطر الطالب في الصدارة بناءً على لونه/تدرجه المفعّل"""
@@ -157,7 +181,12 @@ def execute_query(sql, params=None):
         if is_insert:
             row = cur.fetchone()
             if row:
-                last_id = row['id'] if isinstance(row, dict) else row[0]
+                if isinstance(row, dict):
+                    # بعض الجداول (مثل student_badges) ليس لها عمود id،
+                    # فيكون RETURNING على عمود آخر (مثلاً student_id)
+                    last_id = row.get('id', next(iter(row.values())))
+                else:
+                    last_id = row[0]
         conn.commit()
         cur.close()
         return last_id
@@ -601,21 +630,96 @@ def get_lifetime_xp(student_id):
     )
     return (result['total'] or 0) if result else 0
 
+# ============================================================ #
+# ====== SECTION 5B-bis: خريطة السور/الأجزاء (متعلقة بالحفظ) === #
+# ============================================================ #
+SURAH_NAMES = [
+    'الفاتحة','البقرة','آل عمران','النساء','المائدة','الأنعام','الأعراف','الأنفال','التوبة','يونس',
+    'هود','يوسف','الرعد','إبراهيم','الحجر','النحل','الإسراء','الكهف','مريم','طه',
+    'الأنبياء','الحج','المؤمنون','النور','الفرقان','الشعراء','النمل','القصص','العنكبوت','الروم',
+    'لقمان','السجدة','الأحزاب','سبأ','فاطر','يس','الصافات','ص','الزمر','غافر',
+    'فصلت','الشورى','الزخرف','الدخان','الجاثية','الأحقاف','محمد','الفتح','الحجرات','ق',
+    'الذاريات','الطور','النجم','القمر','الرحمن','الواقعة','الحديد','المجادلة','الحشر','الممتحنة',
+    'الصف','الجمعة','المنافقون','التغابن','الطلاق','التحريم','الملك','القلم','الحاقة','المعارج',
+    'نوح','الجن','المزمل','المدثر','القيامة','الإنسان','المرسلات','النبأ','النازعات','عبس',
+    'التكوير','الإنفطار','المطففين','الإنشقاق','البروج','الطارق','الأعلى','الغاشية','الفجر','البلد',
+    'الشمس','الليل','الضحى','الشرح','التين','العلق','القدر','البينة','الزلزلة','العاديات',
+    'القارعة','التكاثر','العصر','الهمزة','الفيل','قريش','الماعون','الكوثر','الكافرون','النصر',
+    'المسد','الإخلاص','الفلق','الناس',
+]  # 114 اسماً بترتيب المصحف
+
+# بداية كل جزء (رقم السورة، رقم الآية) — الجزء 31 وهمي لتحديد نهاية الجزء 30
+_JUZ_STARTS = [
+    (1,1),(2,142),(2,253),(3,93),(4,24),(4,148),(5,82),(6,111),(7,88),(8,41),
+    (9,93),(11,6),(12,53),(15,1),(17,1),(18,75),(21,1),(23,1),(25,21),(27,56),
+    (29,46),(33,31),(36,28),(39,32),(41,47),(46,1),(51,31),(58,1),(67,1),(78,1),
+    (115,1),
+]
+
+def _build_juz_surahs():
+    """يبني خريطة: رقم الجزء -> مجموعة أرقام السور التي يمر بها (ولو جزئياً)."""
+    mapping = {}
+    for i in range(30):
+        j = i + 1
+        start_surah, _ = _JUZ_STARTS[i]
+        next_surah, next_ayah = _JUZ_STARTS[i + 1]
+        end_surah = next_surah if next_ayah > 1 else next_surah - 1
+        mapping[j] = set(range(start_surah, end_surah + 1))
+    return mapping
+
+JUZ_SURAHS = _build_juz_surahs()  # {juz_number: {surah_numbers...}}
+
+def get_student_memorized_surahs(student_id):
+    """أرقام السور التي سجّلها الطالب كمحفوظة"""
+    rows = query_all("SELECT surah_number FROM student_surahs WHERE student_id = ?", (student_id,))
+    return set(r['surah_number'] for r in rows)
+
+def compute_juz_count(memorized_surah_ids):
+    """يحسب عدد الأجزاء المكتملة: الجزء يُعتبر مكتملاً فقط إذا كانت كل السور
+    التي يمر بها محفوظة بالكامل عند الطالب."""
+    memorized_surah_ids = set(memorized_surah_ids)
+    completed = 0
+    completed_list = []
+    for j in range(1, 31):
+        if JUZ_SURAHS[j].issubset(memorized_surah_ids):
+            completed += 1
+            completed_list.append(j)
+    return completed, completed_list
+
+def toggle_student_surah(student_id, surah_number, memorized):
+    """يسجّل/يلغي تسجيل سورة كمحفوظة لدى الطالب، ثم يعيد تقييم شارات المستوى"""
+    if memorized:
+        execute_query(
+            "INSERT INTO student_surahs (student_id, surah_number) VALUES (?, ?) ON CONFLICT DO NOTHING",
+            (student_id, surah_number)
+        )
+    else:
+        execute_query(
+            "DELETE FROM student_surahs WHERE student_id = ? AND surah_number = ?",
+            (student_id, surah_number)
+        )
+
 def get_hifz_progress(student_id):
-    """تقدير تلقائي لعدد الأجزاء المحفوظة/المراجَعة اعتماداً على سجلات التقييم
-    اليومي الموجودة: كل قيمة نصية مختلفة في حقل الحفظ (أو المراجعة) حصلت على
-    درجة >= SAVE_MASTERY_SCORE تُحتسب كجزء واحد متقن. هذا تقدير وليس عداً
-    دقيقاً بالجزء (لأن الحقل نصي حر)، ويمكن للمسؤول دائماً تجاوزه بقراره."""
-    memorized = query_one("""
-        SELECT COUNT(DISTINCT curr_save) as cnt FROM daily_evaluations
-        WHERE student_id = ? AND score_save >= ? AND curr_save IS NOT NULL AND curr_save <> ''
-    """, (student_id, SAVE_MASTERY_SCORE))
+    """عدد الأجزاء المحفوظة: يُحسب أولاً وبدقّة من قائمة السور التي أقرّ الطالب
+    بحفظها (student_surahs) — الجزء يُحتسب فقط إن اكتملت كل سوره. إن لم يكن
+    الطالب قد سجّل أي سورة بعد، يُستخدم التقدير القديم المعتمد على سجلات
+    التقييم اليومي (curr_save) كبديل احتياطي فقط."""
+    surah_ids = get_student_memorized_surahs(student_id)
+    juz_from_surahs, _ = compute_juz_count(surah_ids)
     reviewed = query_one("""
         SELECT COUNT(DISTINCT curr_rev) as cnt FROM daily_evaluations
         WHERE student_id = ? AND score_rev >= ? AND curr_rev IS NOT NULL AND curr_rev <> ''
     """, (student_id, SAVE_MASTERY_SCORE))
+    if surah_ids:
+        memorized_count = juz_from_surahs
+    else:
+        legacy = query_one("""
+            SELECT COUNT(DISTINCT curr_save) as cnt FROM daily_evaluations
+            WHERE student_id = ? AND score_save >= ? AND curr_save IS NOT NULL AND curr_save <> ''
+        """, (student_id, SAVE_MASTERY_SCORE))
+        memorized_count = legacy['cnt'] if legacy else 0
     return {
-        'memorized': memorized['cnt'] if memorized else 0,
+        'memorized': memorized_count,
         'reviewed': reviewed['cnt'] if reviewed else 0,
     }
 
@@ -1704,20 +1808,36 @@ def set_active_theme_color(student_id, color_id):
 # ============================================================ #
 # ============ تشفير معلومات الطالب في لوحة الصدارة =========== #
 # ============================================================ #
-ENCRYPT_INFO_PRICE = 2000
-UNLOCK_STUDENT_PRICE = 1000
+ENCRYPT_INFO_PRICE = 2000       # السعر الأساسي (مستوى 1) لتشفير معلوماتك
+ENCRYPT_INFO_PRICE_STEP = 300   # الزيادة في السعر مقابل كل مستوى إضافي
+UNLOCK_STUDENT_PRICE = 1000     # السعر الأساسي (مستوى 1) لفك تشفير طالب آخر
+UNLOCK_STUDENT_PRICE_STEP = 200 # الزيادة في السعر مقابل كل مستوى إضافي لدى الطالب المشفَّر
 UNLOCK_DURATION_HOURS = 24
 
+def get_encrypt_price(level):
+    """سعر تشفير المعلومات: كلما ارتفع مستوى الطالب زاد سعر تشفير نفسه"""
+    level = level or 1
+    return ENCRYPT_INFO_PRICE + (level - 1) * ENCRYPT_INFO_PRICE_STEP
+
+def get_unlock_price(level):
+    """سعر فك تشفير طالب آخر: كلما ارتفع مستوى الطالب المشفَّر ارتفع ثمن فك تشفيره"""
+    level = level or 1
+    return UNLOCK_STUDENT_PRICE + (level - 1) * UNLOCK_STUDENT_PRICE_STEP
+
+app.jinja_env.globals['get_encrypt_price'] = get_encrypt_price
+app.jinja_env.globals['get_unlock_price'] = get_unlock_price
+
 def encrypt_my_info(student_id):
-    """تشفير معلوماتي (الاسم/النقاط/الشارات) في لوحة الصدارة مقابل 2000 نقطة"""
+    """تشفير معلوماتي (الاسم/النقاط/الشارات) في لوحة الصدارة — السعر يرتفع مع مستواي"""
     student = get_student_by_id(student_id)
     if not student:
         return False, 'الطالب غير موجود'
     if student.get('info_encrypted'):
         return False, 'معلوماتك مشفّرة بالفعل'
-    if student['points'] < ENCRYPT_INFO_PRICE:
+    price = get_encrypt_price(student.get('level'))
+    if student['points'] < price:
         return False, 'نقاط غير كافية'
-    deduct_points(student_id, ENCRYPT_INFO_PRICE, 'تشفير المعلومات في لوحة الصدارة')
+    deduct_points(student_id, price, 'تشفير المعلومات في لوحة الصدارة')
     execute_query("UPDATE students SET info_encrypted = 1 WHERE id = ?", (student_id,))
     return True, 'تم تشفير معلوماتك في لوحة الصدارة'
 
@@ -1727,7 +1847,7 @@ def decrypt_my_info(student_id):
     return True, 'تم إظهار معلوماتك من جديد'
 
 def unlock_student_info(viewer_id, target_id):
-    """فك تشفير معلومات طالب آخر لمدة 24 ساعة مقابل 1000 نقطة في كل مرة"""
+    """فك تشفير معلومات طالب آخر لمدة 24 ساعة — السعر يرتفع مع مستوى الطالب المستهدف"""
     if viewer_id == target_id:
         return False, 'لا يمكنك فك تشفير معلوماتك الخاصة (استعمل زر الإظهار المجاني)'
 
@@ -1736,10 +1856,11 @@ def unlock_student_info(viewer_id, target_id):
     if not viewer or not target:
         return False, 'بيانات غير صالحة'
 
-    if viewer['points'] < UNLOCK_STUDENT_PRICE:
+    price = get_unlock_price(target.get('level'))
+    if viewer['points'] < price:
         return False, 'نقاط غير كافية'
 
-    deduct_points(viewer_id, UNLOCK_STUDENT_PRICE, f"فك تشفير معلومات: {target.get('name', '')}")
+    deduct_points(viewer_id, price, f"فك تشفير معلومات: {target.get('name', '')}")
 
     expires_at = (datetime.now() + timedelta(hours=UNLOCK_DURATION_HOURS)).strftime('%Y-%m-%d %H:%M:%S')
     execute_query("""
@@ -1924,6 +2045,16 @@ def init_db():
         badge_id INTEGER NOT NULL REFERENCES badges(id) ON DELETE CASCADE,
         earned_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         PRIMARY KEY (student_id, badge_id)
+    )
+    """)
+    
+    # جدول السور المحفوظة لكل طالب (لتحديد عدد الأجزاء والمستوى تلقائياً)
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS student_surahs (
+        student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+        surah_number INTEGER NOT NULL,
+        memorized_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (student_id, surah_number)
     )
     """)
     
@@ -2301,7 +2432,7 @@ def init_db():
     migrations = {
         'messages': [('group_id', 'INTEGER'), ('is_group', 'INTEGER DEFAULT 0'), ('file_url', 'TEXT'), ('receiver_type', 'VARCHAR(20)')],
         'sessions': [('student_id', 'INTEGER REFERENCES students(id) ON DELETE CASCADE')],
-        'students': [('last_monthly_xp', 'VARCHAR(7)'), ('level', 'INTEGER DEFAULT 1')],
+        'students': [('last_monthly_xp', 'VARCHAR(7)'), ('level', 'INTEGER DEFAULT 1'), ('theme_mode', "VARCHAR(10) DEFAULT 'dark'")],
         'competitions': [('rewarded', 'INTEGER DEFAULT 0')],
         'assistants': [('xp_due_date', 'DATE')],
     }
@@ -3660,7 +3791,7 @@ LEADERBOARD_HTML = '''
             <div class="avatar silver">🔒</div>
             <div class="name">🔒 مستخدم مشفّر</div>
             <div class="points">🔒</div>
-            <button class="btn btn-outline btn-xs" onclick="event.stopPropagation();unlockStudent('{{ top3[1].id }}')" style="margin-top:6px;">🔓 فك (1000 XP)</button>
+            <button class="btn btn-outline btn-xs" onclick="event.stopPropagation();unlockStudent('{{ top3[1].id }}', {{ get_unlock_price(top3[1].level) }})" style="margin-top:6px;">🔓 فك ({{ get_unlock_price(top3[1].level) }} XP)</button>
             {% else %}
             <div class="avatar silver">{{ top3[1].name[0]|upper }}</div>
             <div class="name">{{ top3[1].name }}</div>
@@ -3674,7 +3805,7 @@ LEADERBOARD_HTML = '''
             <div class="avatar gold">🔒</div>
             <div class="name">🔒 مستخدم مشفّر</div>
             <div class="points">🔒</div>
-            <button class="btn btn-outline btn-xs" onclick="event.stopPropagation();unlockStudent('{{ top3[0].id }}')" style="margin-top:6px;">🔓 فك (1000 XP)</button>
+            <button class="btn btn-outline btn-xs" onclick="event.stopPropagation();unlockStudent('{{ top3[0].id }}', {{ get_unlock_price(top3[0].level) }})" style="margin-top:6px;">🔓 فك ({{ get_unlock_price(top3[0].level) }} XP)</button>
             {% else %}
             <div class="avatar gold">{{ top3[0].name[0]|upper }}</div>
             <div class="name">{{ top3[0].name }}</div>
@@ -3688,7 +3819,7 @@ LEADERBOARD_HTML = '''
             <div class="avatar bronze">🔒</div>
             <div class="name">🔒 مستخدم مشفّر</div>
             <div class="points">🔒</div>
-            <button class="btn btn-outline btn-xs" onclick="event.stopPropagation();unlockStudent('{{ top3[2].id }}')" style="margin-top:6px;">🔓 فك (1000 XP)</button>
+            <button class="btn btn-outline btn-xs" onclick="event.stopPropagation();unlockStudent('{{ top3[2].id }}', {{ get_unlock_price(top3[2].level) }})" style="margin-top:6px;">🔓 فك ({{ get_unlock_price(top3[2].level) }} XP)</button>
             {% else %}
             <div class="avatar bronze">{{ top3[2].name[0]|upper }}</div>
             <div class="name">{{ top3[2].name }}</div>
@@ -3715,7 +3846,7 @@ LEADERBOARD_HTML = '''
             <div class="leaderboard-row" data-rank="{{ loop.index }}" onclick="{% if not student.is_locked %}showStudentProfile('{{ student.id }}'){% endif %}" style="{{ row_bg_style(student.theme_color) }}">
                 <div class="rank">{% if loop.index == 1 %}<span class="medal">🥇</span>{% elif loop.index == 2 %}<span class="medal">🥈</span>{% elif loop.index == 3 %}<span class="medal">🥉</span>{% else %}<span class="num">{{ loop.index }}</span>{% endif %}</div>
                 {% if student.is_locked %}
-                <div class="name"><div class="avatar">🔒</div><div><div class="full-name">🔒 مستخدم مشفّر</div><div class="sub-info"><button class="btn btn-outline btn-xs" onclick="event.stopPropagation();unlockStudent('{{ student.id }}')">🔓 فك (1000 XP)</button></div></div></div>
+                <div class="name"><div class="avatar">🔒</div><div><div class="full-name">🔒 مستخدم مشفّر</div><div class="sub-info"><button class="btn btn-outline btn-xs" onclick="event.stopPropagation();unlockStudent('{{ student.id }}', {{ get_unlock_price(student.level) }})">🔓 فك ({{ get_unlock_price(student.level) }} XP)</button></div></div></div>
                 <div class="points">🔒</div>
                 <div class="badges">🔒</div>
                 {% else %}
@@ -3744,8 +3875,8 @@ LEADERBOARD_HTML = '''
 <script>
 let currentFilter = 'all', searchQuery = '';
 
-function unlockStudent(targetId) {
-    if (!confirm('🔓 فك تشفير معلومات هذا الطالب لمدة 24 ساعة مقابل 1000 نقطة؟')) return;
+function unlockStudent(targetId, price) {
+    if (!confirm('🔓 فك تشفير معلومات هذا الطالب لمدة 24 ساعة مقابل ' + price + ' نقطة؟')) return;
     fetch('/leaderboard/unlock/' + targetId, { method: 'POST' })
         .then(function(r) {
             if (r.redirected || r.status === 401 || r.status === 403) {
@@ -15881,6 +16012,7 @@ STUDENT_DASHBOARD_HTML = '''
         <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
         <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
@@ -17290,6 +17422,7 @@ STUDENT_PROFILE_HTML = '''
         <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
         <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
@@ -17319,11 +17452,11 @@ STUDENT_PROFILE_HTML = '''
     <div class="profile-card" style="margin-top:16px;">
         <h3 style="margin-bottom:10px;">🔐 خصوصية لوحة الصدارة</h3>
         {% if student.info_encrypted %}
-        <p style="color:var(--text-muted);font-size:14px;margin-bottom:12px;">معلوماتك (الاسم والنقاط والشارات) مشفّرة حالياً في لوحة الصدارة، ويظهر مكانها 🔒. أي طالب آخر يريد رؤيتها يحتاج دفع 1000 نقطة لمدة 24 ساعة فقط.</p>
+        <p style="color:var(--text-muted);font-size:14px;margin-bottom:12px;">معلوماتك (الاسم والنقاط والشارات) مشفّرة حالياً في لوحة الصدارة، ويظهر مكانها 🔒. أي طالب آخر يريد رؤيتها يحتاج دفع {{ get_unlock_price(student.level) }} نقطة لمدة 24 ساعة فقط.</p>
         <button class="btn btn-outline btn-sm" onclick="decryptMyInfo()">👁️ إظهار معلوماتي من جديد (مجاناً)</button>
         {% else %}
-        <p style="color:var(--text-muted);font-size:14px;margin-bottom:12px;">تشفير معلوماتك يخفي اسمك ونقاطك وشاراتك في لوحة الصدارة (تظهر 🔒 بدلاً منها). أي طالب يريد رؤيتها يدفع 1000 نقطة في كل مرة لمدة 24 ساعة فقط. فك التشفير عن نفسك لاحقاً مجاني دائماً.</p>
-        <button class="btn btn-gold btn-sm" onclick="encryptMyInfo()">🔒 تشفير معلوماتي في الصدارة (2000 نقطة)</button>
+        <p style="color:var(--text-muted);font-size:14px;margin-bottom:12px;">تشفير معلوماتك يخفي اسمك ونقاطك وشاراتك في لوحة الصدارة (تظهر 🔒 بدلاً منها). أي طالب يريد رؤيتها يدفع {{ get_unlock_price(student.level) }} نقطة في كل مرة لمدة 24 ساعة فقط. فك التشفير عن نفسك لاحقاً مجاني دائماً. (كلما ارتفع مستواك ارتفع سعر تشفيرك وفك تشفيرك)</p>
+        <button class="btn btn-gold btn-sm" onclick="encryptMyInfo({{ get_encrypt_price(student.level) }})">🔒 تشفير معلوماتي في الصدارة ({{ get_encrypt_price(student.level) }} نقطة)</button>
         {% endif %}
     </div>
     <div class="badges-section">
@@ -17339,8 +17472,8 @@ STUDENT_PROFILE_HTML = '''
 </div>
 <div class="toast" id="toast"><div class="title" id="toastTitle">✅ تم</div><div class="message" id="toastMessage">تم تنفيذ العملية بنجاح</div></div>
 <script>
-function encryptMyInfo() {
-    if (!confirm('🔒 تأكيد تشفير معلوماتك في لوحة الصدارة مقابل 2000 نقطة؟')) return;
+function encryptMyInfo(price) {
+    if (!confirm('🔒 تأكيد تشفير معلوماتك في لوحة الصدارة مقابل ' + price + ' نقطة؟')) return;
     fetch('/student/profile/encrypt_info', { method: 'POST' })
         .then(r => r.json())
         .then(data => {
@@ -18010,6 +18143,7 @@ STUDENT_REPORT_HTML = '''
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
@@ -19270,6 +19404,7 @@ STUDENT_HOMEWORK_HTML = '''
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
@@ -20384,6 +20519,7 @@ STUDENT_COMPETITIONS_HTML = '''
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
@@ -21716,6 +21852,7 @@ STUDENT_MESSAGES_HTML = '''
             <a href="{{ url_for('student_messages') }}" class="active">💬 رسائلي</a>
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
@@ -22663,6 +22800,7 @@ STUDENT_POINTS_HTML = '''
         <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
         <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
         <a href="{{ url_for('student_points') }}" class="active">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
@@ -22738,6 +22876,100 @@ console.log('📊 إحصائيات: ' + ({{ earned|default(0, true) }} + ' مك�
 # ============================================================ #
 # ====== الصفحة 30ب: مستوى الطالب (STUDENT_LEVEL) =============== #
 # ============================================================ #
+STUDENT_MEMORIZATION_HTML = '''
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>سوري المحفوظة - حلقتي زتاي</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary-dark: #0a2a32; --gold: #c9a227; --gold-light: #e8c84a;
+            --glass: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.10);
+            --text-primary: #ffffff; --text-secondary: rgba(255,255,255,0.7); --text-muted: rgba(255,255,255,0.35);
+            --success: #4ade80; --danger: #f87171; --warning: #fbbf24;
+        }
+        body { font-family: 'Tajawal', sans-serif; background: var(--primary-dark); min-height: 100vh; color: var(--text-primary); }
+        .container { max-width: 900px; margin: 0 auto; padding: 16px 20px 40px; }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; padding: 14px 22px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; margin-bottom: 16px; }
+        .header h1 { font-size: 20px; font-weight: 800; }
+        .btn { padding: 7px 16px; border: none; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
+        .btn-outline { background: transparent; border: 1.5px solid var(--glass-border); color: var(--text-secondary); }
+        .summary { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 16px; padding: 22px; text-align: center; margin-bottom: 18px; }
+        .summary .num { font-size: 40px; font-weight: 900; background: linear-gradient(135deg, var(--gold-light), var(--gold)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
+        .summary .lbl { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        .progress-bar { width: 100%; height: 10px; background: rgba(255,255,255,0.08); border-radius: 20px; overflow: hidden; margin-top: 12px; }
+        .progress-bar .fill { height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-light)); border-radius: 20px; transition: width 0.4s ease; }
+        .juz-card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
+        .juz-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; cursor: pointer; }
+        .juz-head .title { font-weight: 700; font-size: 14px; }
+        .juz-head .tag { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 700; }
+        .juz-head .tag.done { background: rgba(74,222,128,0.15); color: var(--success); }
+        .juz-head .tag.pending { background: rgba(251,191,36,0.15); color: var(--warning); }
+        .juz-body { display: none; padding: 4px 16px 14px; }
+        .juz-body.open { display: block; }
+        .surah-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 4px; border-bottom: 1px solid var(--glass-border); font-size: 13px; }
+        .surah-row:last-child { border-bottom: none; }
+        .surah-row input[type=checkbox] { width: 19px; height: 19px; cursor: pointer; accent-color: var(--gold); }
+        .surah-row label { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1; }
+    </style>
+</head>
+<body>
+    {{ theme_style(student)|safe }}
+<div class="container">
+    <div class="header"><h1>📖 سوري المحفوظة</h1><a href="{{ url_for('student_level') }}" class="btn btn-outline">⬅ مستواي</a></div>
+    <div class="summary">
+        <div class="num" id="juzCount">{{ juz_count }}</div>
+        <div class="lbl">من 30 جزءاً محفوظاً</div>
+        <div class="progress-bar"><div class="fill" id="juzFill" style="width: {{ (juz_count / 30 * 100) }}%;"></div></div>
+    </div>
+    {% for j in juz_list %}
+    <div class="juz-card">
+        <div class="juz-head" onclick="this.nextElementSibling.classList.toggle('open')">
+            <span class="title">📗 الجزء {{ j.number }}</span>
+            <span class="tag {{ 'done' if j.complete else 'pending' }}" id="juzTag{{ j.number }}">{{ '✅ مكتمل' if j.complete else 'غير مكتمل' }}</span>
+        </div>
+        <div class="juz-body">
+            {% for s in j.surahs %}
+            <div class="surah-row">
+                <label>
+                    <input type="checkbox" data-surah="{{ s.number }}" {% if s.memorized %}checked{% endif %} onchange="toggleSurah(this)">
+                    سورة {{ s.name }}
+                </label>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endfor %}
+</div>
+<script>
+function toggleSurah(cb) {
+    const surah = cb.dataset.surah;
+    fetch("{{ url_for('student_memorization_toggle') }}", {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({surah_number: surah, memorized: cb.checked})
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            document.getElementById('juzCount').textContent = data.juz_count;
+            document.getElementById('juzFill').style.width = (data.juz_count / 30 * 100) + '%';
+            document.querySelectorAll('[id^="juzTag"]').forEach(tag => {
+                const jn = parseInt(tag.id.replace('juzTag', ''));
+                const done = data.completed_juz.includes(jn);
+                tag.textContent = done ? '✅ مكتمل' : 'غير مكتمل';
+                tag.className = 'tag ' + (done ? 'done' : 'pending');
+            });
+        }
+    });
+}
+</script>
+</body>
+</html>
+'''
 STUDENT_LEVEL_HTML = '''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -22809,6 +23041,13 @@ STUDENT_LEVEL_HTML = '''
         .flash-msg.success { background: rgba(74,222,128,0.12); color: var(--success); border: 1px solid rgba(74,222,128,0.3); }
         .flash-msg.danger { background: rgba(248,113,113,0.12); color: var(--danger); border: 1px solid rgba(248,113,113,0.3); }
         .flash-msg.warning { background: rgba(251,191,36,0.12); color: var(--warning); border: 1px solid rgba(251,191,36,0.3); }
+        .lvl-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 10px; margin-bottom: 6px; font-size: 13px; }
+        .lvl-row.done { background: rgba(74,222,128,0.08); }
+        .lvl-row.current { background: var(--gold-glow); border: 1px solid rgba(201,162,39,0.4); }
+        .lvl-row.locked { background: rgba(255,255,255,0.03); opacity: 0.6; }
+        .lvl-row .lvl-name { font-weight: 700; }
+        .lvl-row .lvl-req { color: var(--text-muted); font-size: 12px; margin-top: 2px; }
+        .lvl-row .lvl-xp { font-size: 12px; color: var(--text-secondary); white-space: nowrap; }
         @media (max-width: 768px) {
             .header { flex-direction: column; align-items: stretch; text-align: center; }
             .header .actions { justify-content: center; }
@@ -22832,6 +23071,7 @@ STUDENT_LEVEL_HTML = '''
         <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
         <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}" class="active">🎖️ مستواي</a>
+        <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
@@ -22897,6 +23137,20 @@ STUDENT_LEVEL_HTML = '''
     {% else %}
     <div class="panel"><div class="empty-state"><div class="icon">🏆</div>أنت في أعلى مستوى — الحافظ الأعظم!</div></div>
     {% endif %}
+
+    <div class="panel">
+        <h3>🗺️ كل المستويات ({{ max_level }})</h3>
+        {% for lv in all_levels %}
+        <div class="lvl-row {{ lv.status }}">
+            <div>
+                <div class="lvl-name">{{ '✅' if lv.status == 'done' else ('👉' if lv.status == 'current' else '🔒') }} {{ lv.name }}</div>
+                <div class="lvl-req">{{ lv.requirement_text }}</div>
+            </div>
+            {% if lv.xp_required %}<div class="lvl-xp">{{ lv.xp_required }} XP</div>{% endif %}
+        </div>
+        {% endfor %}
+        <div style="text-align:center;margin-top:10px;"><a href="{{ url_for('student_memorization') }}" class="btn btn-outline btn-sm">📖 حدّد سورك المحفوظة</a></div>
+    </div>
 
     {% if history %}
     <div class="panel">
@@ -22965,6 +23219,7 @@ STUDENT_PROMOTIONS_HTML = '''
     <div class="nav-bar">
         <a href="{{ url_for('student_dashboard') }}">📊 الرئيسية</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         <a href="{{ url_for('student_promotions') }}" class="active">⚖️ طلبات التقييم</a>
     </div>
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -23744,6 +23999,7 @@ STUDENT_STORE_HTML = '''
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}" class="active">🛍️ المتجر</a>
@@ -24746,6 +25002,7 @@ STUDENT_DUELS_HTML = '''
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
             <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         <a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
@@ -26751,6 +27008,15 @@ def student_dashboard():
                                    avg_change=5,
                                    assistant_info=assistant_info,
                                    datetime=datetime)
+@app.route('/student/toggle_theme_mode', methods=['POST'])
+@login_required('student')
+def student_toggle_theme_mode():
+    """تبديل الوضع بين الداكن والفاتح للطالب الحالي"""
+    student = get_current_user()
+    current_mode = (student.get('theme_mode') or 'dark')
+    new_mode = 'light' if current_mode == 'dark' else 'dark'
+    execute_query("UPDATE students SET theme_mode = ? WHERE id = ?", (new_mode, student['id']))
+    return redirect(request.referrer or url_for('student_dashboard'))
 @app.route('/student/profile', methods=['GET', 'POST'])
 @login_required('student')
 def student_profile():
@@ -27057,6 +27323,46 @@ def student_points():
                                    earned=earned,
                                    spent=spent,
                                    datetime=datetime)
+@app.route('/student/memorization')
+@login_required('student')
+def student_memorization():
+    """صفحة السور المحفوظة: يحدد الطالب السور التي حفظها، فيُحتسب عدد
+    الأجزاء ومستواه تلقائياً بناءً عليها"""
+    student = get_current_user()
+    memorized_ids = get_student_memorized_surahs(student['id'])
+    juz_count, completed_juz = compute_juz_count(memorized_ids)
+    juz_list = []
+    for j in range(1, 31):
+        surahs_in_juz = sorted(JUZ_SURAHS[j])
+        juz_list.append({
+            'number': j,
+            'complete': j in completed_juz,
+            'surahs': [
+                {'number': s, 'name': SURAH_NAMES[s - 1], 'memorized': s in memorized_ids}
+                for s in surahs_in_juz
+            ],
+        })
+    return render_template_string(STUDENT_MEMORIZATION_HTML,
+                                   student=student,
+                                   juz_list=juz_list,
+                                   juz_count=juz_count)
+@app.route('/student/memorization/toggle', methods=['POST'])
+@login_required('student')
+def student_memorization_toggle():
+    """تبديل حالة سورة (محفوظة / غير محفوظة) للطالب الحالي عبر AJAX"""
+    student = get_current_user()
+    data = request.get_json(silent=True) or request.form
+    try:
+        surah_number = int(data.get('surah_number'))
+    except (TypeError, ValueError):
+        return jsonify({'ok': False, 'message': 'سورة غير صالحة'}), 400
+    if surah_number < 1 or surah_number > 114:
+        return jsonify({'ok': False, 'message': 'سورة غير صالحة'}), 400
+    memorized = str(data.get('memorized')).lower() in ('1', 'true', 'yes', 'on')
+    toggle_student_surah(student['id'], surah_number, memorized)
+    memorized_ids = get_student_memorized_surahs(student['id'])
+    juz_count, completed_juz = compute_juz_count(memorized_ids)
+    return jsonify({'ok': True, 'juz_count': juz_count, 'completed_juz': completed_juz})
 @app.route('/student/level')
 @login_required('student')
 def student_level():
@@ -27070,6 +27376,20 @@ def student_level():
         SELECT * FROM promotion_requests WHERE student_id = ? AND status IN ('approved','rejected')
         ORDER BY created_at DESC
     """, (student['id'],))
+    all_levels = []
+    for lv in LEVELS:
+        all_levels.append({
+            'level': lv['level'],
+            'name': lv['name'],
+            'xp_required': lv['xp_required'],
+            'requirement_text': lv['requirement_text'],
+            'status': 'done' if lv['level'] < level else ('current' if lv['level'] == level else 'locked'),
+        })
+    all_levels.append({
+        'level': MAX_LEVEL, 'name': get_level_name(MAX_LEVEL), 'xp_required': None,
+        'requirement_text': 'أعلى مستوى — الحافظ الأعظم',
+        'status': 'done' if MAX_LEVEL < level else ('current' if MAX_LEVEL == level else 'locked'),
+    })
     return render_template_string(STUDENT_LEVEL_HTML,
                                    student=student,
                                    level=level,
@@ -27079,6 +27399,7 @@ def student_level():
                                    recommendations=recommendations,
                                    recommendation_labels=RECOMMENDATION_LABELS,
                                    history=history,
+                                   all_levels=all_levels,
                                    max_level=MAX_LEVEL,
                                    datetime=datetime)
 @app.route('/student/level/request', methods=['POST'])
@@ -27586,7 +27907,7 @@ def create_duel_route():
 def leaderboard():
     """لوحة الصدارة"""
     top_students = query_all("""
-        SELECT id, name, points, rank, status, theme_color, info_encrypted
+        SELECT id, name, points, rank, level, status, theme_color, info_encrypted
         FROM students
         WHERE status = 'active'
         ORDER BY points DESC
@@ -27681,6 +28002,27 @@ def add_theme_color_column():
         print(f"⚠️ خطأ أثناء إضافة أعمدة متجر الألوان: {e}")
 
 add_theme_color_column()
+
+def grant_bonus_xp_once(email, amount, reason):
+    """منح نقاط XP لمرة واحدة فقط لطالب محدد عبر بريده الإلكتروني (لا تتكرر عند
+    إعادة تشغيل السيرفر بفضل التحقق من وجود حركة بنفس السبب مسبقاً)"""
+    try:
+        student = query_one("SELECT id, points FROM students WHERE email = ?", (email,))
+        if not student:
+            print(f"⚠️ لم يتم العثور على طالب بالبريد {email} لمنح نقاط المكافأة")
+            return
+        already = query_one(
+            "SELECT id FROM points_transactions WHERE student_id = ? AND reason = ?",
+            (student['id'], reason)
+        )
+        if already:
+            return  # سبق منحها
+        add_points(student['id'], amount, reason, 'earned')
+        print(f"✅ تم منح {amount} نقطة XP للطالب {email}")
+    except Exception as e:
+        print(f"⚠️ خطأ أثناء منح نقاط المكافأة: {e}")
+
+grant_bonus_xp_once('yacinezaoui2010@gmail.com', 1000000, 'منحة خاصة من الإدارة - مليون نقطة')
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
