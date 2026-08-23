@@ -467,20 +467,101 @@ def deduct_points(student_id, amount, reason):
         return False
     
     return add_points(student_id, amount, reason, 'spent')
+# منحة XP الشهرية بحسب مستوى الطالب (كلما ارتفع المستوى، ارتفعت المنحة)
+MONTHLY_XP_GRANT_BY_LEVEL = {
+    1: 500,
+    2: 800,
+    3: 1200,
+    4: 1800,
+    5: 2500,
+    6: 3500,
+    7: 5000,
+    8: 6000,
+    9: 7000,
+    10: 8500,
+    11: 10000,
+    12: 12000,
+    13: 15000,  # المستوى الأقصى (الحافظ الأعظم)
+}
+def get_monthly_grant_amount(level):
+    """مبلغ المنحة الشهرية المستحق لمستوى معيّن (يأخذ بعين الاعتبار الفروق بين المستويات)"""
+    level = level or 1
+    if level in MONTHLY_XP_GRANT_BY_LEVEL:
+        return MONTHLY_XP_GRANT_BY_LEVEL[level]
+    # أي مستوى غير متوقع (مثلاً أعلى من 13) يأخذ منحة أعلى مستوى معروف
+    return MONTHLY_XP_GRANT_BY_LEVEL[max(MONTHLY_XP_GRANT_BY_LEVEL)]
 def run_monthly_xp_disbursement():
-    """صرف تلقائي لـ 1000 نقطة XP لكل طالب نشط في بداية كل شهر جديد، دون تدخل المشرف"""
+    """صرف تلقائي لمنحة XP شهرية لكل طالب نشط في بداية كل شهر جديد، دون تدخل
+    المشرف. قيمة المنحة تختلف باختلاف مستوى الطالب (انظر MONTHLY_XP_GRANT_BY_LEVEL)."""
     current_month = datetime.now().strftime('%Y-%m')
     students = query_all(
-        "SELECT id FROM students WHERE status = 'active' AND (last_monthly_xp IS NULL OR last_monthly_xp != ?)",
+        "SELECT id, level FROM students WHERE status = 'active' AND (last_monthly_xp IS NULL OR last_monthly_xp != ?)",
         (current_month,)
     )
     for st in students:
-        add_points(st['id'], 1000, f"منحة شهرية تلقائية - {current_month}", 'earned')
+        amount = get_monthly_grant_amount(st.get('level'))
+        add_points(st['id'], amount, f"منحة شهرية تلقائية (مستوى {st.get('level') or 1}) - {current_month}", 'earned')
         execute_query(
             "UPDATE students SET last_monthly_xp = ? WHERE id = ?",
             (current_month, st['id'])
         )
-def get_student_points(student_id):
+POINTS_HIDE_PRICE = 100000  # ثمن شراء خاصية إخفاء النقاط عن المسؤول والطلاب
+def get_points_display(student):
+    """القيمة الظاهرة لرصيد الطالب في الواجهات العامة (الصدارة/إدارة المسؤول):
+    ترجع رمز القفل إن كان الطالب قد فعّل إخفاء نقاطه، وإلا ترجع الرصيد الحقيقي."""
+    if not student:
+        return 0
+    hidden = student.get('points_hidden') if hasattr(student, 'get') else None
+    if hidden:
+        return '🔒'
+    return student.get('points', 0) if hasattr(student, 'get') else 0
+def purchase_points_hide(student_id):
+    """شراء وتفعيل خاصية إخفاء النقاط (ثمنها ضخم: 100000 XP) - يُخصم الثمن فقط
+    عند التفعيل لأول مرة أو عند إعادة التفعيل بعد إلغائه."""
+    student = query_one("SELECT points, points_hidden FROM students WHERE id = ?", (student_id,))
+    if not student:
+        return False, 'الطالب غير موجود'
+    if student.get('points_hidden'):
+        return False, 'خاصية الإخفاء مفعّلة بالفعل'
+    if (student.get('points') or 0) < POINTS_HIDE_PRICE:
+        return False, f'رصيدك غير كافٍ. يلزمك {POINTS_HIDE_PRICE} XP لتفعيل هذه الخاصية'
+    ok = deduct_points(student_id, POINTS_HIDE_PRICE, 'شراء خاصية إخفاء النقاط عن المسؤول والطلاب')
+    if not ok:
+        return False, 'تعذر خصم النقاط'
+    execute_query("UPDATE students SET points_hidden = 1 WHERE id = ?", (student_id,))
+    return True, 'تم تفعيل إخفاء النقاط بنجاح'
+def unhide_points(student_id):
+    """إلغاء إخفاء النقاط (مجاني - لا يُسترجع الثمن المدفوع سابقاً)"""
+    execute_query("UPDATE students SET points_hidden = 0 WHERE id = ?", (student_id,))
+    return True
+def lend_xp_points(lender_id, borrower_id, amount):
+    """إقراض نقاط XP بين طالبين: المُقرض يخسر ضعف المبلغ الذي أقرضه (كثمن
+    للإقراض)، بينما يستلم المُقترض المبلغ الأصلي كاملاً في رصيده."""
+    if lender_id == borrower_id:
+        return False, 'لا يمكنك إقراض نفسك'
+    try:
+        amount = int(amount)
+    except (TypeError, ValueError):
+        return False, 'قيمة غير صالحة'
+    if amount <= 0:
+        return False, 'يجب أن يكون المبلغ أكبر من صفر'
+    borrower = query_one("SELECT id, name, status FROM students WHERE id = ?", (borrower_id,))
+    if not borrower or borrower.get('status') != 'active':
+        return False, 'الطالب المستفيد غير متاح'
+    lender = query_one("SELECT id, name, points FROM students WHERE id = ?", (lender_id,))
+    if not lender:
+        return False, 'حدث خطأ في بيانات المُقرض'
+    cost = amount * 2
+    if (lender.get('points') or 0) < cost:
+        return False, f'رصيدك غير كافٍ. إقراض {amount} نقطة يكلّفك {cost} نقطة من رصيدك'
+    ok = deduct_points(lender_id, cost, f"إقراض {amount} XP إلى {borrower['name']} (خصم مضاعف)")
+    if not ok:
+        return False, 'تعذر خصم النقاط من رصيدك'
+    add_points(borrower_id, amount, f"قرض نقاط من {lender['name']}", 'earned')
+    notify_user(borrower_id, 'student', f"💰 استلمت قرض {amount} XP من {lender['name']}",
+                sender_id=lender_id, sender_type='student')
+    return True, f'تم إقراض {amount} XP بنجاح (خُصم {cost} XP من رصيدك)'
+
     """الحصول على نقاط الطالب"""
     result = query_one("SELECT points FROM students WHERE id = ?", (student_id,))
     return result['points'] if result else 0
@@ -3987,6 +4068,12 @@ LEADERBOARD_HTML = '''
         <div class="stat-card"><div class="number">{{ (top_students|sum(attribute='points') / top_students|length)|round|default(0, true) if top_students else 0 }}</div><div class="label">📊 متوسط النقاط</div></div>
         <div class="stat-card"><div class="number">{{ top_students|selectattr('points', 'gt', 0)|list|length }}</div><div class="label">🎯 لديهم نقاط</div></div>
     </div>
+    <div class="stats-bar" id="levelStatsBar" style="margin-top:10px;flex-wrap:wrap;">
+        {% for lv in levels %}
+        <div class="stat-card"><div class="number">{{ level_counts.get(lv.level, 0) }}</div><div class="label">{{ lv.name }}</div></div>
+        {% endfor %}
+        <div class="stat-card"><div class="number">{{ level_counts.get(13, 0) }}</div><div class="label">🏆 الحافظ الأعظم</div></div>
+    </div>
     {% if top_students|length >= 3 %}
     <div class="podium" id="podium">
         {% set top3 = top_students[:3] %}
@@ -4000,7 +4087,7 @@ LEADERBOARD_HTML = '''
             {% else %}
             <div class="avatar silver">{{ top3[1].name[0]|upper }}</div>
             <div class="name">{{ top3[1].name }}</div>
-            <div class="points">{{ top3[1].points|default(0, true) }} نقطة</div>
+            <div class="points">{{ top3[1].points_display }} {% if top3[1].points_display != '🔒' %}نقطة{% endif %}</div>
             {% endif %}
             <div class="position">المركز الثاني</div>
         </div>
@@ -4014,7 +4101,7 @@ LEADERBOARD_HTML = '''
             {% else %}
             <div class="avatar gold">{{ top3[0].name[0]|upper }}</div>
             <div class="name">{{ top3[0].name }}</div>
-            <div class="points">{{ top3[0].points|default(0, true) }} نقطة</div>
+            <div class="points">{{ top3[0].points_display }} {% if top3[0].points_display != '🔒' %}نقطة{% endif %}</div>
             {% endif %}
             <div class="position">🏆 البطل</div>
         </div>
@@ -4028,7 +4115,7 @@ LEADERBOARD_HTML = '''
             {% else %}
             <div class="avatar bronze">{{ top3[2].name[0]|upper }}</div>
             <div class="name">{{ top3[2].name }}</div>
-            <div class="points">{{ top3[2].points|default(0, true) }} نقطة</div>
+            <div class="points">{{ top3[2].points_display }} {% if top3[2].points_display != '🔒' %}نقطة{% endif %}</div>
             {% endif %}
             <div class="position">المركز الثالث</div>
         </div>
@@ -4056,7 +4143,7 @@ LEADERBOARD_HTML = '''
                 <div class="badges">🔒</div>
                 {% else %}
                 <div class="name"><div class="avatar {% if loop.index == 1 %}gold{% elif loop.index == 2 %}silver{% elif loop.index == 3 %}bronze{% endif %}">{{ student.name[0]|upper }}</div><div><div class="full-name">{{ student.name }}</div><div class="sub-info">📚 {{ student.rank|default(0, true) }} مستوى</div></div></div>
-                <div class="points">{{ student.points|default(0, true) }}</div>
+                <div class="points">{{ student.points_display }}</div>
                 <div class="badges">{% if loop.index <= 3 %}🏅🌟⭐{% elif loop.index <= 10 %}🏅🌟{% elif loop.index <= 25 %}🏅{% else %}<span class="empty">-</span>{% endif %}</div>
                 {% endif %}
                 <div class="change {% if loop.index <= 3 %}up{% elif loop.index <= 5 %}down{% else %}same{% endif %}">{% if loop.index <= 3 %}↑ +{{ 5 - loop.index + 1 }}{% elif loop.index <= 5 %}↓ -{{ loop.index - 3 }}{% else %}-{% endif %}</div>
@@ -4072,7 +4159,7 @@ LEADERBOARD_HTML = '''
     <div class="tv-header">🏆 أفضل طلاب الحلقة</div>
     <div class="tv-grid" id="tvGrid">
         {% for student in top_students[:6] %}
-        <div class="tv-item"><span class="rank">{% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{{ loop.index }}{% endif %}</span><div class="name">{{ student.name }}</div><div class="points">{{ student.points|default(0, true) }} نقطة</div></div>
+        <div class="tv-item"><span class="rank">{% if loop.index == 1 %}🥇{% elif loop.index == 2 %}🥈{% elif loop.index == 3 %}🥉{% else %}{{ loop.index }}{% endif %}</span><div class="name">{{ student.name }}</div><div class="points">{{ student.points_display }} {% if student.points_display != '🔒' %}نقطة{% endif %}</div></div>
         {% endfor %}
     </div>
 </div>
@@ -22985,6 +23072,36 @@ STUDENT_POINTS_HTML = '''
             <div class="stat"><div class="num">{{ transactions|length }}</div><div class="label">📋 عدد الحركات</div></div>
         </div>
     </div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;margin-bottom:18px;">
+        <div style="background:var(--glass);border:1px solid var(--glass-border);border-radius:14px;padding:18px;">
+            <h3 style="font-size:15px;margin-bottom:10px;color:var(--gold-light);">🤝 إقراض نقاط XP</h3>
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">تنبيه: عند إقراض طالب آخر مبلغاً معيناً، يُخصم منك <strong>ضعف</strong> ذلك المبلغ من رصيدك (المُقترض يستلم المبلغ الأصلي فقط).</p>
+            <form method="POST" action="{{ url_for('student_points_lend') }}" onsubmit="return confirm('سيُخصم من رصيدك ضعف المبلغ الذي تقرضه. هل تريد المتابعة؟');" style="display:flex;flex-direction:column;gap:10px;">
+                <select name="borrower_id" required style="padding:8px 10px;border-radius:8px;border:1px solid var(--glass-border);background:rgba(255,255,255,0.05);color:#fff;font-family:inherit;">
+                    <option value="">اختر الطالب المستفيد</option>
+                    {% for s in other_students %}
+                    <option value="{{ s.id }}">{{ s.name }}</option>
+                    {% endfor %}
+                </select>
+                <input type="number" name="amount" min="1" placeholder="عدد النقاط (XP) المراد إقراضها" required lang="en" style="padding:8px 10px;border-radius:8px;border:1px solid var(--glass-border);background:rgba(255,255,255,0.05);color:#fff;font-family:inherit;">
+                <button type="submit" class="btn btn-outline btn-sm" style="justify-content:center;">🤝 إقراض النقاط</button>
+            </form>
+        </div>
+        <div style="background:var(--glass);border:1px solid var(--glass-border);border-radius:14px;padding:18px;">
+            <h3 style="font-size:15px;margin-bottom:10px;color:var(--gold-light);">🔒 إخفاء رصيدي</h3>
+            {% if student.points_hidden %}
+            <p style="font-size:13px;color:var(--success);margin-bottom:12px;">✅ خاصية الإخفاء مفعّلة حالياً — رصيدك لا يظهر للمسؤول ولا لبقية الطلاب في لوحة الصدارة وملفك.</p>
+            <form method="POST" action="{{ url_for('student_points_unhide') }}" onsubmit="return confirm('هل تريد إلغاء إخفاء نقاطك؟ ستصبح ظاهرة للجميع مجدداً.');">
+                <button type="submit" class="btn btn-outline btn-sm" style="justify-content:center;width:100%;">👁️ إلغاء الإخفاء</button>
+            </form>
+            {% else %}
+            <p style="font-size:12px;color:var(--text-muted);margin-bottom:12px;">اجعل رصيدك من النقاط مخفياً عن المسؤول وباقي الطلاب في لوحة الصدارة وملفك الشخصي، مقابل ثمن ضخم: <strong>{{ points_hide_price }}</strong> XP.</p>
+            <form method="POST" action="{{ url_for('student_points_hide') }}" onsubmit="return confirm('سيُخصم {{ points_hide_price }} XP من رصيدك لتفعيل إخفاء النقاط. هل تريد المتابعة؟');">
+                <button type="submit" class="btn btn-outline btn-sm" style="justify-content:center;width:100%;">🔒 تفعيل الإخفاء ({{ points_hide_price }} XP)</button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
     <div class="filter-bar">
         <div class="filter-group"><button class="filter-btn active" onclick="filterTable('all', this)">📋 الكل</button><button class="filter-btn" onclick="filterTable('earned', this)">📈 مكتسب</button><button class="filter-btn" onclick="filterTable('spent', this)">📉 منفق</button></div>
         <div class="search-box"><input type="text" id="searchInput" placeholder="🔍 بحث..." oninput="searchTable(this.value)"></div>
@@ -26731,7 +26848,7 @@ def admin_view_student(student_id):
     )['count']
 
     badges = get_badges_with_status(student_id)
-    points = get_student_points(student_id)
+    points = '🔒' if student.get('points_hidden') else get_student_points(student_id)
     rank = get_student_rank(student_id)
     recent_evals = get_student_evaluations(student_id, limit=10)
     homework_list = get_student_homework(student_id)
@@ -27588,13 +27705,50 @@ def student_points():
         "SELECT SUM(amount) as total FROM points_transactions WHERE student_id = ? AND type = 'spent'",
         (student['id'],)
     )['total'] or 0
-    
+
+    # قائمة الطلاب الآخرين النشطين (لاستخدامها في خاصية إقراض النقاط)
+    other_students = query_all(
+        "SELECT id, name FROM students WHERE status = 'active' AND id != ? ORDER BY name",
+        (student['id'],)
+    )
+
     return render_template_string(STUDENT_POINTS_HTML,
                                    student=student,
                                    transactions=transactions,
                                    earned=earned,
                                    spent=spent,
+                                   other_students=other_students,
+                                   points_hide_price=POINTS_HIDE_PRICE,
                                    datetime=datetime)
+@app.route('/student/points/lend', methods=['POST'])
+@login_required('student')
+def student_points_lend():
+    """إقراض نقاط XP لطالب آخر (يخسر المُقرض ضعف المبلغ)"""
+    student = get_current_user()
+    borrower_id = request.form.get('borrower_id', type=int)
+    amount = request.form.get('amount', type=int)
+    if not borrower_id or not amount:
+        flash('يرجى تحديد الطالب والمبلغ', 'danger')
+        return redirect(url_for('student_points'))
+    ok, message = lend_xp_points(student['id'], borrower_id, amount)
+    flash(message, 'success' if ok else 'danger')
+    return redirect(url_for('student_points'))
+@app.route('/student/points/hide', methods=['POST'])
+@login_required('student')
+def student_points_hide():
+    """شراء وتفعيل خاصية إخفاء النقاط عن المسؤول والطلاب"""
+    student = get_current_user()
+    ok, message = purchase_points_hide(student['id'])
+    flash(message, 'success' if ok else 'danger')
+    return redirect(url_for('student_points'))
+@app.route('/student/points/unhide', methods=['POST'])
+@login_required('student')
+def student_points_unhide():
+    """إلغاء إخفاء النقاط (مجاناً)"""
+    student = get_current_user()
+    unhide_points(student['id'])
+    flash('تم إلغاء إخفاء النقاط، رصيدك ظاهر الآن للجميع', 'success')
+    return redirect(url_for('student_points'))
 @app.route('/student/memorization')
 @login_required('student')
 def student_memorization():
@@ -28182,7 +28336,7 @@ def create_duel_route():
 def leaderboard():
     """لوحة الصدارة"""
     top_students = query_all("""
-        SELECT id, name, points, rank, level, status, theme_color, info_encrypted
+        SELECT id, name, points, rank, level, status, theme_color, info_encrypted, points_hidden
         FROM students
         WHERE status = 'active'
         ORDER BY points DESC
@@ -28203,10 +28357,23 @@ def leaderboard():
             student['badges'] = []
         else:
             student['badges'] = get_student_badges(student['id'])
-    
+        # إخفاء النقاط عن الجميع باستثناء صاحبها (حتى المسؤول لا يراها هنا)
+        if bool(student.get('points_hidden')) and not is_self:
+            student['points_display'] = '🔒'
+        else:
+            student['points_display'] = student.get('points', 0)
+
+    # عدد الطلاب في كل مستوى (لعرضه في لوحة الصدارة)
+    level_counts_rows = query_all("""
+        SELECT level, COUNT(*) as cnt FROM students WHERE status = 'active' GROUP BY level
+    """)
+    level_counts = {row['level']: row['cnt'] for row in level_counts_rows}
+
     return render_template_string(LEADERBOARD_HTML,
                                    top_students=top_students,
                                    viewer_id=viewer_id,
+                                   levels=LEVELS,
+                                   level_counts=level_counts,
                                    datetime=datetime)
 @app.route('/static/uploads/<path:filename>')
 def serve_upload(filename):
@@ -28262,6 +28429,7 @@ def add_theme_color_column():
         execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS owned_theme_colors TEXT")
         execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS owned_theme_gradients TEXT")
         execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS info_encrypted INTEGER DEFAULT 0")
+        execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS points_hidden INTEGER DEFAULT 0")
         execute_query("""
             CREATE TABLE IF NOT EXISTS student_unlocks (
                 id SERIAL PRIMARY KEY,
