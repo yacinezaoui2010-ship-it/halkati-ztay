@@ -21,6 +21,20 @@ app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024  # 50MB
 @app.context_processor
 def inject_globals():
     return dict(datetime=datetime)
+
+def shade_hex(hex_color, factor):
+    """تفتيح أو تغميق لون HEX. factor > 1 يفتّح، factor < 1 يغمّق"""
+    try:
+        h = (hex_color or '').lstrip('#')
+        if len(h) == 3:
+            h = ''.join(c * 2 for c in h)
+        r, g, b = (int(h[i:i+2], 16) for i in (0, 2, 4))
+        r, g, b = (max(0, min(255, int(c * factor))) for c in (r, g, b))
+        return '#%02x%02x%02x' % (r, g, b)
+    except Exception:
+        return hex_color
+
+app.jinja_env.filters['shade'] = shade_hex
 # ============================================================ #
 # ====== SECTION 1: CONFIGURATION ============================= #
 # ============================================================ #
@@ -127,8 +141,11 @@ def column_exists(table_name, column_name):
 # ============================================================ #
 # ====== SECTION 3: AUTHENTICATION HELPERS ==================== #
 # ============================================================ #
-def login_required(role=None):
-    """مزخرف للتحقق من تسجيل الدخول مع دور محدد"""
+def login_required(role=None, permission=None):
+    """مزخرف للتحقق من تسجيل الدخول مع دور محدد.
+    إذا تم تمرير permission، فالمساعد (assistant) يُسمح له بالدخول فقط إذا كانت
+    هذه الصلاحية من ضمن صلاحياته الممنوحة (has_assistant_permission). المشرف
+    الحقيقي (admin) يعدي دائماً بلا قيد."""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -136,9 +153,18 @@ def login_required(role=None):
                 flash('الرجاء تسجيل الدخول أولاً', 'danger')
                 return redirect(url_for('home'))
             if role and session.get('role') != role:
-                # التحقق من صلاحيات المساعد
-                if role == 'admin' and session.get('role') == 'assistant':
-                    # المساعد له صلاحيات محدودة
+                # التحقق من صلاحيات المساعد: الطالب العادي (role='student') الذي يملك
+                # منحة مساعد نشطة (assistants.active=1) يُسمح له بدخول صفحات admin
+                # محددة، فقط ضمن الصلاحية المطلوبة لتلك الصفحة.
+                if role == 'admin' and session.get('role') == 'student' and get_active_assistant_record():
+                    # __ADMIN_ONLY__ = صفحة حساسة (حساب المشرف، إدارة المساعدين، السجل، المتجر...)
+                    # ممنوعة على أي مساعد نهائياً مهما كانت صلاحياته
+                    if permission == '__ADMIN_ONLY__':
+                        flash('هذه الصفحة مخصصة للمشرف فقط', 'danger')
+                        return redirect(url_for('student_assistant'))
+                    if permission and not has_assistant_permission(permission):
+                        flash('غير مصرح لك بالوصول إلى هذه الصفحة (صلاحية غير ممنوحة)', 'danger')
+                        return redirect(url_for('student_assistant'))
                     return f(*args, **kwargs)
                 flash('غير مصرح لك بالوصول إلى هذه الصفحة', 'danger')
                 return redirect(url_for('home'))
@@ -178,18 +204,22 @@ def get_current_user():
                 return dict(student, **dict(assistant))
         return student
     return None
-def has_assistant_permission(permission):
-    """التحقق من صلاحية المساعد"""
-    if session.get('role') != 'assistant' and session.get('role') != 'admin':
-        return False
-    
-    if session.get('role') == 'admin':
-        return True
-    
-    assistant = query_one(
-        "SELECT permissions FROM assistants WHERE student_id = ? AND active = 1",
+def get_active_assistant_record():
+    """يرجع سجل منحة المساعد النشطة للطالب الحالي (role='student') إن وجدت، وإلا None.
+    هذا هو المصدر الحقيقي لكون المستخدم 'مساعد' فعالاً، بما أن دور الجلسة يبقى
+    دائماً 'student' (لا يوجد role='assistant' منفصل يُستعمل عملياً)."""
+    if session.get('role') != 'student' or 'user_id' not in session:
+        return None
+    return query_one(
+        "SELECT * FROM assistants WHERE student_id = ? AND active = 1",
         (session.get('user_id'),)
     )
+def has_assistant_permission(permission):
+    """التحقق من صلاحية معينة: المشرف يملك كل الصلاحيات دائماً، والطالب صاحب
+    منحة مساعد نشطة يملكها فقط إذا كانت ضمن صلاحياته الممنوحة أو يملك 'view_all'."""
+    if session.get('role') == 'admin':
+        return True
+    assistant = get_active_assistant_record()
     if not assistant:
         return False
     perms = assistant['permissions'].split(',') if assistant['permissions'] else []
@@ -1892,19 +1922,6 @@ def init_db():
     )
     """)
     
-    # جدول إعادة تعيين كلمة المرور
-    cur.execute("""
-    CREATE TABLE IF NOT EXISTS password_resets (
-        id SERIAL PRIMARY KEY,
-        user_type VARCHAR(20) NOT NULL,
-        user_id INTEGER NOT NULL,
-        token VARCHAR(64) UNIQUE NOT NULL,
-        expires_at TIMESTAMP NOT NULL,
-        used INTEGER DEFAULT 0,
-        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-    """)
-    
     # ==========================================
     # ترحيل قاعدة البيانات: إضافة أي أعمدة ناقصة لقواعد بيانات قديمة
     # ==========================================
@@ -3595,7 +3612,6 @@ ADMIN_LOGIN_HTML = '''
         </div>
         <div class="form-options">
             <label><input type="checkbox" name="remember" id="remember"> تذكرني</label>
-            <a href="/forgot-password">نسيت كلمة المرور؟</a>
         </div>
         <button type="submit" class="btn-login" id="loginBtn"><span class="btn-text">🚪 دخول</span><span class="spinner"></span></button>
     </form>
@@ -3914,7 +3930,6 @@ STUDENT_LOGIN_HTML = r'''
         </div>
         <div class="form-options">
             <label><input type="checkbox" name="remember" id="remember"> تذكرني</label>
-            <a href="/forgot-password">نسيت كلمة المرور؟</a>
         </div>
         <button type="submit" class="btn-login" id="loginBtn"><span class="btn-text">🚪 دخول</span><span class="spinner"></span></button>
     </form>
@@ -10942,9 +10957,174 @@ ASSISTANTS_HTML = '''
     </div>
 
     <!-- ==========================================
+    نافذة عرض/تعديل بيانات المساعد
+    ========================================== -->
+    <div id="assistantModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.6);z-index:9998;align-items:center;justify-content:center;padding:16px;">
+        <div style="background:var(--card-bg,#151b33);border:1px solid rgba(201,162,39,0.3);border-radius:14px;max-width:520px;width:100%;max-height:85vh;overflow-y:auto;padding:22px;">
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;">
+                <h3 id="assistantModalTitle" style="margin:0;color:var(--gold,#c9a227);">👁️ تفاصيل المساعد</h3>
+                <button onclick="closeAssistantModal()" style="background:none;border:none;color:var(--text-muted,#999);font-size:20px;cursor:pointer;">✕</button>
+            </div>
+
+            <!-- وضع العرض -->
+            <div id="assistantViewMode">
+                <div id="assistantViewBody" style="font-size:14px;line-height:2;"></div>
+                <div style="margin-top:16px;text-align:left;">
+                    <button class="btn btn-warning btn-xs" onclick="switchToEditMode()">✏️ تعديل الصلاحيات</button>
+                </div>
+            </div>
+
+            <!-- وضع التعديل -->
+            <div id="assistantEditMode" style="display:none;">
+                <div class="form-group">
+                    <label>🔑 الصلاحيات (اختر صلاحية واحدة على الأقل)</label>
+                    <div class="checkbox-group" id="editPermissionsGroup">
+                        <label><input type="checkbox" name="edit_permissions" value="view_students"> 👁️ عرض الطلاب</label>
+                        <label><input type="checkbox" name="edit_permissions" value="send_messages"> 💬 إرسال رسائل</label>
+                        <label><input type="checkbox" name="edit_permissions" value="grade_homework"> 📚 تقييم واجبات</label>
+                        <label><input type="checkbox" name="edit_permissions" value="manage_evaluation"> 📊 تقييم يومي</label>
+                        <label><input type="checkbox" name="edit_permissions" value="manage_competitions"> 🏆 إدارة مسابقات</label>
+                        <label><input type="checkbox" name="edit_permissions" value="view_analytics"> 📈 عرض تحليلات</label>
+                        <label><input type="checkbox" name="edit_permissions" value="manage_students"> 👨‍🎓 إدارة الطلاب</label>
+                        <label><input type="checkbox" name="edit_permissions" value="manage_attendance"> 📋 إدارة الحضور</label>
+                        <label><input type="checkbox" name="edit_permissions" value="manage_sessions"> 🗂️ إدارة الحصص</label>
+                        <label><input type="checkbox" name="edit_permissions" value="export_data"> 📥 تصدير البيانات</label>
+                        <label><input type="checkbox" name="edit_permissions" value="manage_reports"> 📊 إدارة التقارير</label>
+                        <label><input type="checkbox" name="edit_permissions" value="manage_announcements"> 📢 إدارة الإعلانات</label>
+                        <label><input type="checkbox" name="edit_permissions" value="manage_events"> 🎪 إدارة الفعاليات</label>
+                        <label><input type="checkbox" name="edit_permissions" value="manage_badges"> 🏅 إدارة الشارات</label>
+                        <label><input type="checkbox" name="edit_permissions" value="view_all"> 👑 صلاحيات كاملة</label>
+                    </div>
+                </div>
+                <div style="margin-top:16px;text-align:left;display:flex;gap:8px;justify-content:flex-end;">
+                    <button class="btn btn-outline btn-xs" onclick="switchToViewMode()">إلغاء</button>
+                    <button class="btn btn-gold btn-xs" onclick="saveAssistantPermissions()">💾 حفظ التعديلات</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ==========================================
     جافا سكريبت
     ========================================== -->
     <script>
+        window.ASSISTANTS_DATA = {{ assistants|tojson }};
+        let currentAssistantId = null;
+
+        const PERM_LABELS = {
+            view_students: '👁️ عرض الطلاب', send_messages: '💬 إرسال رسائل', grade_homework: '📚 تقييم واجبات',
+            manage_evaluation: '📊 تقييم يومي', manage_competitions: '🏆 إدارة مسابقات', view_analytics: '📈 عرض تحليلات',
+            manage_students: '👨‍🎓 إدارة الطلاب', manage_attendance: '📋 إدارة الحضور', manage_sessions: '🗂️ إدارة الحصص',
+            export_data: '📥 تصدير البيانات', manage_reports: '📊 إدارة التقارير', manage_announcements: '📢 إدارة الإعلانات',
+            manage_events: '🎪 إدارة الفعاليات', manage_badges: '🏅 إدارة الشارات', view_all: '👑 صلاحيات كاملة'
+        };
+
+        function findAssistant(id) {
+            return window.ASSISTANTS_DATA.find(function(a) { return String(a.id) === String(id); });
+        }
+
+        function closeAssistantModal() {
+            document.getElementById('assistantModal').style.display = 'none';
+            currentAssistantId = null;
+        }
+
+        function switchToViewMode() {
+            document.getElementById('assistantEditMode').style.display = 'none';
+            document.getElementById('assistantViewMode').style.display = 'block';
+            document.getElementById('assistantModalTitle').textContent = '👁️ تفاصيل المساعد';
+        }
+
+        function switchToEditMode() {
+            const assistant = findAssistant(currentAssistantId);
+            if (!assistant) return;
+            const currentPerms = (assistant.permissions || '').split(',').filter(Boolean);
+            document.querySelectorAll('#editPermissionsGroup input[type="checkbox"]').forEach(function(cb) {
+                cb.checked = currentPerms.indexOf(cb.value) !== -1;
+            });
+            document.getElementById('assistantViewMode').style.display = 'none';
+            document.getElementById('assistantEditMode').style.display = 'block';
+            document.getElementById('assistantModalTitle').textContent = '✏️ تعديل صلاحيات المساعد';
+        }
+
+        function renderAssistantView(assistant) {
+            const perms = (assistant.permissions || '').split(',').filter(Boolean);
+            const permsHtml = perms.length
+                ? perms.map(function(p) { return '<span class="perm-tag">' + (PERM_LABELS[p] || p) + '</span>'; }).join(' ')
+                : '<span style="color:var(--text-muted);">لا توجد صلاحيات</span>';
+
+            document.getElementById('assistantViewBody').innerHTML = `
+                <div><strong>👤 الاسم:</strong> ${assistant.student_name || '-'}</div>
+                <div><strong>📧 البريد:</strong> ${assistant.email || '-'}</div>
+                <div><strong>📅 تاريخ المنح:</strong> ${assistant.granted_at || '-'}</div>
+                <div><strong>📊 عدد الإجراءات:</strong> ${assistant.actions_count || 0}</div>
+                <div><strong>⭐ نقاط XP:</strong> ${assistant.xp_points || 0}</div>
+                <div><strong>📅 المنحة القادمة:</strong> ${assistant.xp_due_date || '-'}</div>
+                <div><strong>📅 آخر منحة:</strong> ${assistant.last_xp_granted || '-'}</div>
+                <div style="margin-top:8px;"><strong>🔑 الصلاحيات:</strong><br>${permsHtml}</div>
+            `;
+        }
+
+        function viewAssistant(id) {
+            const assistant = findAssistant(id);
+            if (!assistant) {
+                showToast('error', '❌ خطأ', 'تعذر العثور على بيانات هذا المساعد');
+                return;
+            }
+            currentAssistantId = id;
+            renderAssistantView(assistant);
+            switchToViewMode();
+            document.getElementById('assistantModal').style.display = 'flex';
+        }
+
+        function editPermissions(id) {
+            const assistant = findAssistant(id);
+            if (!assistant) {
+                showToast('error', '❌ خطأ', 'تعذر العثور على بيانات هذا المساعد');
+                return;
+            }
+            currentAssistantId = id;
+            renderAssistantView(assistant);
+            document.getElementById('assistantModal').style.display = 'flex';
+            switchToEditMode();
+        }
+
+        function saveAssistantPermissions() {
+            if (!currentAssistantId) return;
+            const checked = Array.from(document.querySelectorAll('#editPermissionsGroup input[type="checkbox"]:checked')).map(function(cb) { return cb.value; });
+            if (checked.length === 0) {
+                showToast('error', '❌ خطأ', 'الرجاء اختيار صلاحية واحدة على الأقل');
+                return;
+            }
+
+            const formData = new FormData();
+            checked.forEach(function(p) { formData.append('permissions', p); });
+
+            showToast('info', '⏳', 'جاري حفظ التعديلات...');
+
+            fetch('/admin/assistants/update_permissions/' + currentAssistantId, {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        const assistant = findAssistant(currentAssistantId);
+                        if (assistant) assistant.permissions = checked.join(',');
+                        showToast('success', '✅ تم', data.message || 'تم تحديث الصلاحيات بنجاح');
+                        setTimeout(function() { location.reload(); }, 1200);
+                    } else {
+                        showToast('error', '❌ خطأ', data.message || 'حدث خطأ');
+                    }
+                })
+                .catch(function() {
+                    showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال بالخادم');
+                });
+        }
+
+        document.getElementById('assistantModal').addEventListener('click', function(e) {
+            if (e.target === this) closeAssistantModal();
+        });
+
         /**
          * ==========================================
          * SECTION 1: دوال مساعدة
@@ -11024,14 +11204,6 @@ ASSISTANTS_HTML = '''
          * SECTION 3: إدارة المساعدين
          * ==========================================
          */
-
-        function viewAssistant(id) {
-            showToast('info', '👁️', 'جاري عرض تفاصيل المساعد...');
-        }
-
-        function editPermissions(id) {
-            showToast('info', '✏️', 'جاري فتح تعديل الصلاحيات...');
-        }
 
         function revokeAssistant(id, name) {
             if (!confirm('⚠️ هل أنت متأكد من سحب صلاحيات المساعد "' + name + '"؟')) return;
@@ -15065,7 +15237,14 @@ STUDENT_DASHBOARD_HTML = '''
 </head>
 <body>
     {% if student and student.theme_color %}
-    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    <style>:root{
+        --gold: {{ student.theme_color }} !important;
+        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
+        --gold-glow: {{ student.theme_color }}26 !important;
+        --primary: {{ student.theme_color|shade(0.45) }} !important;
+        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
+        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
+    }</style>
     {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
@@ -15889,7 +16068,14 @@ ASSISTANT_DASHBOARD_HTML = '''
 
 <body>
     {% if student and student.theme_color %}
-    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    <style>:root{
+        --gold: {{ student.theme_color }} !important;
+        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
+        --gold-glow: {{ student.theme_color }}26 !important;
+        --primary: {{ student.theme_color|shade(0.45) }} !important;
+        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
+        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
+    }</style>
     {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
@@ -16488,7 +16674,14 @@ STUDENT_PROFILE_HTML = '''
 </head>
 <body>
     {% if student and student.theme_color %}
-    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    <style>:root{
+        --gold: {{ student.theme_color }} !important;
+        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
+        --gold-glow: {{ student.theme_color }}26 !important;
+        --primary: {{ student.theme_color|shade(0.45) }} !important;
+        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
+        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
+    }</style>
     {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
@@ -17166,7 +17359,14 @@ STUDENT_REPORT_HTML = '''
 
 <body>
     {% if student and student.theme_color %}
-    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    <style>:root{
+        --gold: {{ student.theme_color }} !important;
+        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
+        --gold-glow: {{ student.theme_color }}26 !important;
+        --primary: {{ student.theme_color|shade(0.45) }} !important;
+        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
+        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
+    }</style>
     {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
@@ -18427,7 +18627,14 @@ STUDENT_HOMEWORK_HTML = '''
 
 <body>
     {% if student and student.theme_color %}
-    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    <style>:root{
+        --gold: {{ student.theme_color }} !important;
+        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
+        --gold-glow: {{ student.theme_color }}26 !important;
+        --primary: {{ student.theme_color|shade(0.45) }} !important;
+        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
+        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
+    }</style>
     {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
@@ -19541,7 +19748,14 @@ STUDENT_COMPETITIONS_HTML = '''
 
 <body>
     {% if student and student.theme_color %}
-    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    <style>:root{
+        --gold: {{ student.theme_color }} !important;
+        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
+        --gold-glow: {{ student.theme_color }}26 !important;
+        --primary: {{ student.theme_color|shade(0.45) }} !important;
+        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
+        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
+    }</style>
     {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
@@ -20048,7 +20262,14 @@ STUDENT_GAMIFICATION_HTML = '''
 </head>
 <body>
     {% if student and student.theme_color %}
-    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    <style>:root{
+        --gold: {{ student.theme_color }} !important;
+        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
+        --gold-glow: {{ student.theme_color }}26 !important;
+        --primary: {{ student.theme_color|shade(0.45) }} !important;
+        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
+        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
+    }</style>
     {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
@@ -20868,7 +21089,14 @@ STUDENT_MESSAGES_HTML = '''
 
 <body>
     {% if student and student.theme_color %}
-    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    <style>:root{
+        --gold: {{ student.theme_color }} !important;
+        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
+        --gold-glow: {{ student.theme_color }}26 !important;
+        --primary: {{ student.theme_color|shade(0.45) }} !important;
+        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
+        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
+    }</style>
     {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
@@ -21872,7 +22100,14 @@ STUDENT_POINTS_HTML = '''
 </head>
 <body>
     {% if student and student.theme_color %}
-    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    <style>:root{
+        --gold: {{ student.theme_color }} !important;
+        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
+        --gold-glow: {{ student.theme_color }}26 !important;
+        --primary: {{ student.theme_color|shade(0.45) }} !important;
+        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
+        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
+    }</style>
     {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
@@ -22679,7 +22914,14 @@ STUDENT_STORE_HTML = '''
 
 <body>
     {% if student and student.theme_color %}
-    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    <style>:root{
+        --gold: {{ student.theme_color }} !important;
+        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
+        --gold-glow: {{ student.theme_color }}26 !important;
+        --primary: {{ student.theme_color|shade(0.45) }} !important;
+        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
+        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
+    }</style>
     {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
@@ -23635,7 +23877,14 @@ STUDENT_DUELS_HTML = '''
 
 <body>
     {% if student and student.theme_color %}
-    <style>:root{--gold: {{ student.theme_color }} !important; --gold-light: {{ student.theme_color }} !important;}</style>
+    <style>:root{
+        --gold: {{ student.theme_color }} !important;
+        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
+        --gold-glow: {{ student.theme_color }}26 !important;
+        --primary: {{ student.theme_color|shade(0.45) }} !important;
+        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
+        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
+    }</style>
     {% endif %}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
@@ -23921,274 +24170,176 @@ STUDENT_DUELS_HTML = '''
 </body>
 </html>
 '''
-FORGOT_PASSWORD_HTML = '''
-<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>نسيت كلمة المرور - حلقتي زتاي</title>
-    <meta name="robots" content="noindex, nofollow">
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --primary-dark: #0d1a3f;
-            --gold: #c9a227;
-            --gold-light: #e8c84a;
-            --glass: rgba(255,255,255,0.06);
-            --glass-border: rgba(255,255,255,0.10);
-            --text-primary: #ffffff;
-            --text-secondary: rgba(255,255,255,0.7);
-            --text-muted: rgba(255,255,255,0.35);
-            --danger: #f87171;
-            --success: #4ade80;
-        }
-        body {
-            font-family: 'Tajawal', sans-serif;
-            background: var(--primary-dark);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        .box {
-            width: 100%;
-            max-width: 420px;
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 32px 28px;
-            backdrop-filter: blur(20px);
-            color: var(--text-primary);
-        }
-        h1 { font-size: 20px; color: var(--gold-light); margin-bottom: 6px; text-align: center; }
-        p.sub { color: var(--text-secondary); font-size: 13px; text-align: center; margin-bottom: 24px; }
-        .form-group { margin-bottom: 16px; }
-        label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
-        input[type=text] {
-            width: 100%; padding: 12px 14px; border-radius: 10px;
-            border: 1px solid var(--glass-border); background: rgba(255,255,255,0.04);
-            color: var(--text-primary); font-family: inherit; font-size: 14px;
-        }
-        .btn {
-            width: 100%; padding: 12px; border-radius: 10px; border: none;
-            background: var(--gold); color: #1a1a1a; font-weight: 700;
-            font-family: inherit; font-size: 14px; cursor: pointer; margin-top: 8px;
-        }
-        .btn:hover { background: var(--gold-light); }
-        .alert { padding: 12px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
-        .alert-error { background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.25); color: var(--danger); }
-        .alert-success { background: rgba(74,222,128,0.12); border: 1px solid rgba(74,222,128,0.25); color: var(--success); }
-        .reset-link { word-break: break-all; font-size: 12px; background: rgba(255,255,255,0.06); padding: 10px; border-radius: 8px; margin-top: 8px; }
-        .back-link { display: block; text-align: center; margin-top: 20px; color: var(--text-muted); font-size: 13px; text-decoration: none; }
-        .back-link:hover { color: var(--gold-light); }
-    </style>
-</head>
-<body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
-    <div class="box">
-        <h1>🔑 نسيت كلمة المرور؟</h1>
-        <p class="sub">أدخل بريدك الإلكتروني (للطالب) أو اسم المستخدم (للمشرف)</p>
-        
-        {% if error %}
-        <div class="alert alert-error">❌ {{ error }}</div>
-        {% endif %}
-        
-        {% if reset_link %}
-        <div class="alert alert-success">
-            ✅ تم إنشاء رابط إعادة التعيين. بما أن التطبيق لا يملك خدمة بريد إلكتروني مفعّلة، انسخ هذا الرابط وافتحه لإعادة تعيين كلمة المرور:
-            <div class="reset-link">{{ reset_link }}</div>
-        </div>
-        {% else %}
-        <form method="POST">
-            <div class="form-group">
-                <label>البريد الإلكتروني أو اسم المستخدم</label>
-                <input type="text" name="identifier" required autofocus>
-            </div>
-            <button type="submit" class="btn">إرسال رابط إعادة التعيين</button>
-        </form>
-        {% endif %}
-        
-        <a href="/" class="back-link">⬅ العودة للصفحة الرئيسية</a>
-    </div>
-</body>
-</html>
-'''
-RESET_PASSWORD_HTML = '''
-<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>إعادة تعيين كلمة المرور - حلقتي زتاي</title>
-    <meta name="robots" content="noindex, nofollow">
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --primary-dark: #0d1a3f;
-            --gold: #c9a227;
-            --gold-light: #e8c84a;
-            --glass: rgba(255,255,255,0.06);
-            --glass-border: rgba(255,255,255,0.10);
-            --text-primary: #ffffff;
-            --text-secondary: rgba(255,255,255,0.7);
-            --text-muted: rgba(255,255,255,0.35);
-            --danger: #f87171;
-            --success: #4ade80;
-        }
-        body {
-            font-family: 'Tajawal', sans-serif;
-            background: var(--primary-dark);
-            min-height: 100vh;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            padding: 20px;
-        }
-        .box {
-            width: 100%;
-            max-width: 420px;
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 20px;
-            padding: 32px 28px;
-            backdrop-filter: blur(20px);
-            color: var(--text-primary);
-        }
-        h1 { font-size: 20px; color: var(--gold-light); margin-bottom: 6px; text-align: center; }
-        .form-group { margin-bottom: 16px; }
-        label { display: block; font-size: 13px; color: var(--text-secondary); margin-bottom: 6px; }
-        input[type=password] {
-            width: 100%; padding: 12px 14px; border-radius: 10px;
-            border: 1px solid var(--glass-border); background: rgba(255,255,255,0.04);
-            color: var(--text-primary); font-family: inherit; font-size: 14px;
-        }
-        .btn {
-            width: 100%; padding: 12px; border-radius: 10px; border: none;
-            background: var(--gold); color: #1a1a1a; font-weight: 700;
-            font-family: inherit; font-size: 14px; cursor: pointer; margin-top: 8px;
-        }
-        .btn:hover { background: var(--gold-light); }
-        .alert { padding: 12px 14px; border-radius: 10px; font-size: 13px; margin-bottom: 16px; }
-        .alert-error { background: rgba(248,113,113,0.12); border: 1px solid rgba(248,113,113,0.25); color: var(--danger); }
-        .alert-success { background: rgba(74,222,128,0.12); border: 1px solid rgba(74,222,128,0.25); color: var(--success); }
-        .back-link { display: block; text-align: center; margin-top: 20px; color: var(--text-muted); font-size: 13px; text-decoration: none; }
-        .back-link:hover { color: var(--gold-light); }
-    </style>
-</head>
-<body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
-    <div class="box">
-        <h1>🔒 إعادة تعيين كلمة المرور</h1>
-        
-        {% if error %}
-        <div class="alert alert-error">❌ {{ error }}</div>
-        {% endif %}
-        
-        {% if success %}
-        <div class="alert alert-success">✅ تم تغيير كلمة المرور بنجاح. يمكنك الآن تسجيل الدخول بكلمة المرور الجديدة.</div>
-        {% elif valid %}
-        <form method="POST">
-            <div class="form-group">
-                <label>كلمة المرور الجديدة</label>
-                <input type="password" name="password" required minlength="6" autofocus>
-            </div>
-            <div class="form-group">
-                <label>تأكيد كلمة المرور</label>
-                <input type="password" name="password_confirm" required minlength="6">
-            </div>
-            <button type="submit" class="btn">تغيير كلمة المرور</button>
-        </form>
-        {% endif %}
-        
-        <a href="/" class="back-link">⬅ العودة للصفحة الرئيسية</a>
-    </div>
-</body>
-</html>
-'''
 # ============================================================ #
 # ====== SECTION 16: ROUTES =================================== #
 # ============================================================ #
 # ----- الصفحة الرئيسية -----
 @app.route('/admin/session_history')
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def admin_session_history():
     """سجل الحصص (قيد التطوير)"""
     flash('هذه الميزة قيد التطوير حالياً', 'info')
     return redirect(url_for('admin_dashboard'))
+ASSISTANT_PANEL_HTML = '''
+<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>لوحة المساعد - حلقتي زتاي</title>
+    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        :root {
+            --primary: #134e5e; --primary-light: #1a7a8e; --primary-dark: #0a2a32;
+            --gold: #c9a227; --gold-light: #e8c84a; --gold-glow: rgba(201,162,39,0.15);
+            --glass: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.10);
+            --text-primary: #ffffff; --text-secondary: rgba(255,255,255,0.7); --text-muted: rgba(255,255,255,0.35);
+            --shadow: 0 8px 32px rgba(0,0,0,0.3); --transition: 0.3s ease;
+            --success: #4ade80; --danger: #f87171; --warning: #fbbf24; --info: #60a5fa;
+        }
+        body { font-family: 'Tajawal', sans-serif; background: var(--primary-dark); min-height: 100vh; color: var(--text-primary); }
+        .bg-layer { position: fixed; inset: 0; z-index: 0; pointer-events: none;
+            background: radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.10), transparent),
+                        radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent); }
+        .container { max-width: 1100px; margin: 0 auto; padding: 20px; position: relative; z-index: 1; }
+        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;
+            padding: 18px 22px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 16px;
+            margin-bottom: 20px; backdrop-filter: blur(10px); }
+        .header h1 { font-size: 21px; font-weight: 800; }
+        .header .sub { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
+        .badge-active { background: rgba(74,222,128,0.15); color: var(--success); border: 1px solid rgba(74,222,128,0.35);
+            padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 700; }
+        .stats-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
+        .stat-box { flex: 1; min-width: 140px; background: var(--glass); border: 1px solid var(--glass-border);
+            border-radius: 14px; padding: 14px 16px; text-align: center; }
+        .stat-box .val { font-size: 22px; font-weight: 900; color: var(--gold-light); }
+        .stat-box .lbl { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
+        .card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 16px; padding: 18px;
+            transition: var(--transition); text-decoration: none; color: inherit; display: block; }
+        .card:not(.disabled):hover { transform: translateY(-3px); border-color: var(--gold); box-shadow: var(--shadow); }
+        .card.disabled { opacity: 0.5; cursor: not-allowed; }
+        .card .icon { font-size: 26px; margin-bottom: 10px; }
+        .card .title { font-size: 15px; font-weight: 800; margin-bottom: 6px; }
+        .card .desc { font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
+        .card .soon { display: inline-block; margin-top: 10px; font-size: 11px; background: rgba(251,191,36,0.15);
+            color: var(--warning); padding: 3px 10px; border-radius: 10px; font-weight: 700; }
+        .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
+        .back-link { display: inline-block; margin-bottom: 16px; color: var(--text-secondary); text-decoration: none; font-size: 13px; }
+        .back-link:hover { color: var(--gold-light); }
+    </style>
+</head>
+<body>
+<div class="bg-layer"></div>
+<div class="container">
+    <a href="{{ url_for('student_dashboard') }}" class="back-link">→ الرجوع للوحة الطالب</a>
+    <div class="header">
+        <div>
+            <h1>🧑‍🤝‍🧑 لوحة المساعد</h1>
+            <div class="sub">مرحباً {{ student.name if student else '' }} — هذه الصفحة تعرض فقط الصلاحيات الممنوحة لك</div>
+        </div>
+        <span class="badge-active">✅ منحة نشطة{% if has_view_all %} · صلاحيات كاملة{% endif %}</span>
+    </div>
+
+    <div class="stats-row">
+        <div class="stat-box"><div class="val">{{ assistant.xp_points|default(0, true) }}</div><div class="lbl">⭐ نقاط XP</div></div>
+        <div class="stat-box"><div class="val">{{ actions_count }}</div><div class="lbl">📊 عدد الإجراءات</div></div>
+        <div class="stat-box"><div class="val">{{ granted_at }}</div><div class="lbl">📅 تاريخ المنح</div></div>
+        <div class="stat-box"><div class="val">{{ xp_due_date }}</div><div class="lbl">📅 المنحة القادمة</div></div>
+    </div>
+
+    {% if sections %}
+    <div class="grid">
+        {% for s in sections %}
+            {% if s.url %}
+            <a href="{{ s.url }}" class="card">
+                <div class="icon">{{ s.icon }}</div>
+                <div class="title">{{ s.title }}</div>
+                <div class="desc">{{ s.desc }}</div>
+            </a>
+            {% else %}
+            <div class="card disabled">
+                <div class="icon">{{ s.icon }}</div>
+                <div class="title">{{ s.title }}</div>
+                <div class="desc">{{ s.desc }}</div>
+                <span class="soon">قريباً</span>
+            </div>
+            {% endif %}
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="empty-state">
+        <div style="font-size:40px;margin-bottom:10px;">🔒</div>
+        لا توجد صلاحيات ممنوحة لك حالياً. تواصل مع المشرف.
+    </div>
+    {% endif %}
+</div>
+</body>
+</html>
+'''
 @app.route('/student/assistant')
 @login_required('student')
 def student_assistant():
-    """لوحة المساعد (قيد التطوير)"""
-    flash('هذه الميزة قيد التطوير حالياً', 'info')
-    return redirect(url_for('student_dashboard'))
-@app.route('/forgot-password', methods=['GET', 'POST'])
-def forgot_password():
-    """طلب إعادة تعيين كلمة المرور"""
-    reset_link = None
-    error = None
-    if request.method == 'POST':
-        identifier = request.form.get('identifier', '').strip()
-        if not identifier:
-            error = 'الرجاء إدخال البريد الإلكتروني أو اسم المستخدم'
-        else:
-            student = query_one("SELECT * FROM students WHERE email = ?", (identifier,))
-            admin = None if student else query_one(
-                "SELECT * FROM admins WHERE username = ? OR email = ?", (identifier, identifier)
-            )
-            user_type = 'student' if student else ('admin' if admin else None)
-            user = student or admin
-            if not user:
-                error = 'لم يتم العثور على حساب مطابق'
-            else:
-                token = secrets.token_urlsafe(32)
-                expires_at = (datetime.now() + timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')
-                execute_query(
-                    "INSERT INTO password_resets (user_type, user_id, token, expires_at) VALUES (?, ?, ?, ?)",
-                    (user_type, user['id'], token, expires_at)
-                )
-                reset_link = url_for('reset_password', token=token, _external=True)
-    return render_template_string(FORGOT_PASSWORD_HTML, reset_link=reset_link, error=error)
-@app.route('/reset-password/<token>', methods=['GET', 'POST'])
-def reset_password(token):
-    """إعادة تعيين كلمة المرور عبر الرمز"""
-    reset = query_one("SELECT * FROM password_resets WHERE token = ?", (token,))
-    error = None
-    success = False
-    
-    valid = False
-    if reset:
-        try:
-            expires = datetime.strptime(reset['expires_at'], '%Y-%m-%d %H:%M:%S')
-            valid = (not reset['used']) and expires >= datetime.now()
-        except Exception:
-            valid = False
-    
-    if not reset or not valid:
-        error = 'رابط إعادة التعيين غير صالح أو منتهي الصلاحية'
-    elif request.method == 'POST':
-        new_password = request.form.get('password', '')
-        confirm_password = request.form.get('password_confirm', '')
-        if len(new_password) < 6:
-            error = 'كلمة المرور يجب أن تكون 6 أحرف على الأقل'
-        elif new_password != confirm_password:
-            error = 'كلمتا المرور غير متطابقتين'
-        else:
-            hashed = generate_password_hash(new_password)
-            table = 'students' if reset['user_type'] == 'student' else 'admins'
-            if table == 'students':
-                execute_query("UPDATE students SET password = ? WHERE id = ?", (hashed, reset['user_id']))
-            else:
-                execute_query("UPDATE admins SET password = ? WHERE id = ?", (hashed, reset['user_id']))
-            execute_query("UPDATE password_resets SET used = 1 WHERE id = ?", (reset['id'],))
-            success = True
-    
-    return render_template_string(RESET_PASSWORD_HTML, error=error, success=success, valid=valid)
+    """لوحة المساعد: تعرض للطالب صاحب منحة المساعد النشطة الصلاحيات
+    الممنوحة له فقط، مع روابط مباشرة للصفحات المتاحة."""
+    assistant = get_active_assistant_record()
+    if not assistant:
+        flash('ليست لديك صلاحيات مساعد نشطة حالياً', 'info')
+        return redirect(url_for('student_dashboard'))
+
+    student = get_current_user()
+    perms = assistant['permissions'].split(',') if assistant['permissions'] else []
+    has_view_all = 'view_all' in perms
+
+    # كل صلاحية: التسمية، الأيقونة، الوصف، ورابط الصفحة (None = قريباً)
+    PERMISSION_SECTIONS = [
+        {'key': 'view_students', 'icon': '👁️', 'title': 'عرض الطلاب', 'desc': 'استعراض قائمة الطلاب وملفاتهم.', 'endpoint': 'manage_students'},
+        {'key': 'manage_students', 'icon': '👨‍🎓', 'title': 'إدارة الطلاب', 'desc': 'إضافة/تعديل بيانات الطلاب وحالتهم.', 'endpoint': 'manage_students'},
+        {'key': 'send_messages', 'icon': '💬', 'title': 'إرسال رسائل', 'desc': 'مراسلة الطلاب وأولياء الأمور.', 'endpoint': 'admin_messages'},
+        {'key': 'grade_homework', 'icon': '📚', 'title': 'تقييم واجبات', 'desc': 'تصحيح ومتابعة واجبات الطلاب.', 'endpoint': 'homework'},
+        {'key': 'manage_evaluation', 'icon': '📊', 'title': 'تقييم يومي', 'desc': 'إدخال درجات الحفظ والتقييم اليومي.', 'endpoint': 'evaluation'},
+        {'key': 'manage_sessions', 'icon': '🗂️', 'title': 'إدارة الحصص', 'desc': 'إضافة وتعديل الحصص اليومية.', 'endpoint': 'evaluation'},
+        {'key': 'manage_competitions', 'icon': '🏆', 'title': 'إدارة مسابقات', 'desc': 'إنشاء المسابقات ورصد النتائج.', 'endpoint': 'competitions'},
+        {'key': 'view_analytics', 'icon': '📈', 'title': 'عرض تحليلات', 'desc': 'إحصائيات ومؤشرات أداء الحلقة.', 'endpoint': 'admin_analytics'},
+        {'key': 'manage_attendance', 'icon': '📋', 'title': 'إدارة الحضور', 'desc': 'تسجيل ومتابعة حضور الطلاب.', 'endpoint': None},
+        {'key': 'export_data', 'icon': '📥', 'title': 'تصدير البيانات', 'desc': 'تصدير بيانات الطلاب والتقارير.', 'endpoint': None},
+        {'key': 'manage_reports', 'icon': '📊', 'title': 'إدارة التقارير', 'desc': 'إنشاء ومراجعة تقارير الطلاب.', 'endpoint': None},
+        {'key': 'manage_announcements', 'icon': '📢', 'title': 'إدارة الإعلانات', 'desc': 'نشر إعلانات للطلاب.', 'endpoint': None},
+        {'key': 'manage_events', 'icon': '🎪', 'title': 'إدارة الفعاليات', 'desc': 'تنظيم فعاليات ومناسبات الحلقة.', 'endpoint': None},
+        {'key': 'manage_badges', 'icon': '🏅', 'title': 'إدارة الشارات', 'desc': 'منح شارات إنجاز للطلاب.', 'endpoint': None},
+    ]
+
+    sections = []
+    for perm in PERMISSION_SECTIONS:
+        granted = has_view_all or perm['key'] in perms
+        if not granted:
+            continue
+        url = None
+        if perm['endpoint']:
+            try:
+                url = url_for(perm['endpoint'])
+            except Exception:
+                url = None
+        sections.append(dict(perm, url=url))
+
+    actions_count = query_one(
+        "SELECT COUNT(*) as count FROM assistant_actions WHERE assistant_id = ?",
+        (assistant['id'],)
+    )
+    xp_due = assistant.get('xp_due_date')
+    granted_at = assistant.get('granted_at')
+
+    return render_template_string(ASSISTANT_PANEL_HTML,
+                                   student=student,
+                                   assistant=assistant,
+                                   sections=sections,
+                                   has_view_all=has_view_all,
+                                   actions_count=actions_count['count'] if actions_count else 0,
+                                   xp_due_date=xp_due.strftime('%Y-%m-%d') if xp_due and hasattr(xp_due, 'strftime') else (xp_due or '-'),
+                                   granted_at=granted_at.strftime('%Y-%m-%d') if granted_at and hasattr(granted_at, 'strftime') else (granted_at or '-'),
+                                   datetime=datetime)
 @app.route('/logout')
 def logout():
     """تسجيل الخروج"""
@@ -24337,7 +24488,7 @@ def admin_dashboard():
                                    recent_evaluations=recent_evaluations, recent_activities=recent_activities,
                                    notifications_count=unread_messages, datetime=datetime)
 @app.route('/admin/students', methods=['GET', 'POST'])
-@login_required('admin')
+@login_required('admin', permission='view_students')
 def manage_students():
     """إدارة الطلاب"""
     if request.method == 'POST':
@@ -24408,7 +24559,7 @@ def manage_students():
     
     return render_template_string(MANAGE_STUDENTS_HTML, students=students, fixed_ids=fixed_ids)
 @app.route('/admin/students/toggle/<int:student_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_students')
 def toggle_student_status(student_id):
     """تبديل حالة الطالب"""
     student = get_student_by_id(student_id)
@@ -24418,7 +24569,7 @@ def toggle_student_status(student_id):
         return jsonify({'success': True})
     return jsonify({'success': False}), 404
 @app.route('/admin/students/delete/<int:student_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_students')
 def delete_student_route(student_id):
     """حذف طالب"""
     # منع حذف الطالب الافتراضي
@@ -24428,7 +24579,7 @@ def delete_student_route(student_id):
     delete_student(student_id)
     return jsonify({'success': True})
 @app.route('/admin/students/bulk', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_students')
 def bulk_student_action():
     """إجراء جماعي على الطلاب"""
     data = request.get_json()
@@ -24449,7 +24600,7 @@ def bulk_student_action():
     
     return jsonify({'success': True})
 @app.route('/admin/students/update_rank', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_students')
 def update_student_rank():
     """تحديث ترتيب الطالب"""
     data = request.get_json()
@@ -24461,13 +24612,13 @@ def update_student_rank():
         return jsonify({'success': True})
     return jsonify({'success': False})
 @app.route('/admin/requests')
-@login_required('admin')
+@login_required('admin', permission='manage_students')
 def registration_requests():
     """طلبات التسجيل"""
     requests = query_all("SELECT * FROM registration_requests ORDER BY created_at DESC")
     return render_template_string(REGISTRATION_REQUESTS_HTML, requests=requests, datetime=datetime)
 @app.route('/admin/requests/accept/<int:request_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_students')
 def accept_registration(request_id):
     """قبول طلب تسجيل"""
     req = query_one("SELECT * FROM registration_requests WHERE id = ?", (request_id,))
@@ -24493,7 +24644,7 @@ def accept_registration(request_id):
     
     return jsonify({'success': True, 'student_id': student_id})
 @app.route('/admin/requests/reject/<int:request_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_students')
 def reject_registration(request_id):
     """رفض طلب تسجيل"""
     execute_query(
@@ -24502,7 +24653,7 @@ def reject_registration(request_id):
     )
     return jsonify({'success': True})
 @app.route('/admin/requests/check_new')
-@login_required('admin')
+@login_required('admin', permission='manage_students')
 def check_new_requests():
     """التحقق من الطلبات الجديدة"""
     pending = query_one("SELECT COUNT(*) as count FROM registration_requests WHERE status = 'pending'")
@@ -24511,7 +24662,7 @@ def check_new_requests():
         'pending_count': pending['count'] if pending else 0
     })
 @app.route('/admin/evaluation')
-@login_required('admin')
+@login_required('admin', permission='manage_evaluation')
 def evaluation():
     """صفحة التقييم وسجل الحصص"""
     students = get_active_students()
@@ -24548,7 +24699,7 @@ def evaluation():
                                    datetime=datetime,
                                    timedelta=timedelta)
 @app.route('/admin/evaluation/add_month', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_evaluation')
 def add_month():
     """إضافة شهر جديد"""
     data = request.get_json()
@@ -24563,13 +24714,13 @@ def add_month():
     )
     return jsonify({'success': True, 'month_id': month_id})
 @app.route('/admin/evaluation/delete_month/<int:month_id>', methods=['DELETE'])
-@login_required('admin')
+@login_required('admin', permission='manage_evaluation')
 def delete_month(month_id):
     """حذف شهر"""
     execute_query("DELETE FROM months WHERE id = ?", (month_id,))
     return jsonify({'success': True})
 @app.route('/admin/evaluation/add_session', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_sessions')
 def add_session():
     """إضافة حصة جديدة"""
     data = request.get_json()
@@ -24599,7 +24750,7 @@ def add_session():
     
     return jsonify({'success': True, 'session_id': session_id})
 @app.route('/admin/evaluation/add_session_all', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_sessions')
 def add_session_all():
     """تسجيل حصة لكل الطلاب النشطين دفعة واحدة"""
     data = request.get_json()
@@ -24652,13 +24803,13 @@ def add_session_all():
         message += f' (تم تجاوز {skipped_count} كان لديهم حصة مسجلة مسبقاً بنفس التاريخ)'
     return jsonify({'success': True, 'added_count': added_count, 'skipped_count': skipped_count, 'message': message})
 @app.route('/admin/evaluation/delete_session/<int:session_id>', methods=['DELETE'])
-@login_required('admin')
+@login_required('admin', permission='manage_sessions')
 def delete_session(session_id):
     """حذف حصة"""
     execute_query("DELETE FROM sessions WHERE id = ?", (session_id,))
     return jsonify({'success': True})
 @app.route('/admin/evaluation/save_sessions', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_evaluation')
 def save_sessions():
     """حفظ بيانات التقييمات"""
     data = request.get_json()
@@ -24682,7 +24833,7 @@ def save_sessions():
     
     return jsonify({'success': True})
 @app.route('/admin/evaluation/send_sessions', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_sessions')
 def send_sessions():
     """إرسال التقييمات للطلاب ومكافأتهم تلقائياً بنقاط XP حسب درجاتهم"""
     data = request.get_json()
@@ -24714,7 +24865,7 @@ def send_sessions():
     
     return jsonify({'success': True, 'sent_count': sent_count})
 @app.route('/admin/evaluation/copy_previous', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_evaluation')
 def copy_previous_evaluation():
     """نسخ تقييمات الأمس إلى اليوم"""
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
@@ -24752,7 +24903,7 @@ def copy_previous_evaluation():
     
     return jsonify({'success': True})
 @app.route('/admin/homework')
-@login_required('admin')
+@login_required('admin', permission='grade_homework')
 def homework():
     """إدارة الواجبات"""
     students = get_active_students()
@@ -24782,7 +24933,7 @@ def homework():
                                    datetime=datetime,
                                    timedelta=timedelta)
 @app.route('/admin/homework/add', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='grade_homework')
 def add_homework():
     """إضافة واجب جديد"""
     homework_type = request.form.get('homework_type')
@@ -24816,7 +24967,7 @@ def add_homework():
     
     return jsonify({'success': True, 'message': f'تم إضافة الواجب لـ {len(student_ids)} طالب'})
 @app.route('/admin/homework/copy_previous', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='grade_homework')
 def copy_previous_homework():
     """نسخ واجبات الأمس إلى اليوم"""
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
@@ -24843,7 +24994,7 @@ def copy_previous_homework():
     
     return jsonify({'success': True})
 @app.route('/admin/competitions')
-@login_required('admin')
+@login_required('admin', permission='manage_competitions')
 def competitions():
     """إدارة المسابقات"""
     competitions_list = query_all("""
@@ -24883,7 +25034,7 @@ def competitions():
                                    datetime=datetime,
                                    timedelta=timedelta)
 @app.route('/admin/competitions/add', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_competitions')
 def add_competition():
     """إضافة مسابقة جديدة"""
     data = {
@@ -24912,7 +25063,7 @@ def add_competition():
     
     return jsonify({'success': True, 'message': 'تم إضافة المسابقة بنجاح'})
 @app.route('/admin/competitions/toggle/<int:comp_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_competitions')
 def toggle_competition(comp_id):
     """تبديل حالة المسابقة، ومكافأة الفائز تلقائياً عند إغلاق المسابقة"""
     comp = get_competition_by_id(comp_id)
@@ -24940,7 +25091,7 @@ def toggle_competition(comp_id):
         return jsonify({'success': True})
     return jsonify({'success': False})
 @app.route('/admin/competitions/toggle_registration/<int:comp_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_competitions')
 def toggle_competition_registration(comp_id):
     """تبديل حالة التسجيل في المسابقة"""
     comp = get_competition_by_id(comp_id)
@@ -24949,13 +25100,13 @@ def toggle_competition_registration(comp_id):
         return jsonify({'success': True})
     return jsonify({'success': False})
 @app.route('/admin/competitions/delete/<int:comp_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_competitions')
 def delete_competition_route(comp_id):
     """حذف مسابقة"""
     delete_competition(comp_id)
     return jsonify({'success': True})
 @app.route('/admin/competitions/save_grades', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='manage_competitions')
 def save_competition_grades():
     """حفظ درجات المسابقات"""
     grades = request.form.get('grades', {})
@@ -24985,13 +25136,13 @@ def save_competition_grades():
     
     return jsonify({'success': True, 'totals': totals})
 @app.route('/admin/competitions/grades/<int:comp_id>')
-@login_required('admin')
+@login_required('admin', permission='manage_competitions')
 def get_competition_grades_json(comp_id):
     """الحصول على درجات مسابقة بصيغة JSON"""
     grades = get_competition_grades(comp_id)
     return jsonify({'success': True, 'grades': [dict(g) for g in grades]})
 @app.route('/admin/messages')
-@login_required('admin')
+@login_required('admin', permission='send_messages')
 def admin_messages():
     """صفحة رسائل المشرف"""
     admin = get_current_user()
@@ -25054,7 +25205,7 @@ def admin_messages():
                                    students=get_active_students(),
                                    datetime=datetime)
 @app.route('/admin/messages/send', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='send_messages')
 def send_admin_message():
     """إرسال رسالة من المشرف"""
     admin = get_current_user()
@@ -25075,7 +25226,7 @@ def send_admin_message():
     
     return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
 @app.route('/admin/messages/send_file', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='send_messages')
 def send_admin_file():
     """إرسال ملف من المشرف"""
     admin = get_current_user()
@@ -25097,7 +25248,7 @@ def send_admin_file():
     
     return jsonify({'success': True, 'file_url': file_url})
 @app.route('/admin/messages/create_group', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='send_messages')
 def create_message_group():
     """إنشاء مجموعة رسائل جديدة"""
     name = request.form.get('group_name')
@@ -25120,7 +25271,7 @@ def create_message_group():
     
     return jsonify({'success': True, 'group_id': group_id})
 @app.route('/admin/messages/group/add_member', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='send_messages')
 def add_group_member():
     """إضافة طالب إلى مجموعة موجودة"""
     data = request.get_json() or request.form
@@ -25147,7 +25298,7 @@ def add_group_member():
     )
     return jsonify({'success': True, 'message': 'تمت إضافة الطالب للمجموعة'})
 @app.route('/admin/messages/group/remove_member', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='send_messages')
 def remove_group_member():
     """إزالة طالب من مجموعة"""
     data = request.get_json() or request.form
@@ -25163,7 +25314,7 @@ def remove_group_member():
     )
     return jsonify({'success': True, 'message': 'تمت إزالة الطالب من المجموعة'})
 @app.route('/admin/messages/send_voice', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='send_messages')
 def send_admin_voice():
     """إرسال رسالة صوتية من المشرف"""
     admin = get_current_user()
@@ -25187,7 +25338,7 @@ def send_admin_voice():
 
     return jsonify({'success': True, 'file_url': file_url})
 @app.route('/admin/messages/check_new/<type>/<int:id>')
-@login_required('admin')
+@login_required('admin', permission='send_messages')
 def check_new_admin_messages(type, id):
     """التحقق من الرسائل الجديدة للمشرف"""
     admin_id = session['user_id']
@@ -25211,25 +25362,25 @@ def check_new_admin_messages(type, id):
         'new_messages': [dict(m) for m in messages]
     })
 @app.route('/admin/messages/mark_read/<int:message_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='send_messages')
 def mark_admin_message_read(message_id):
     """تحديد رسالة كمقروءة للمشرف"""
     mark_message_as_read(message_id)
     return jsonify({'success': True})
 @app.route('/admin/messages/mark_all_read', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='send_messages')
 def mark_all_admin_messages_read():
     """تحديد جميع رسائل المشرف كمقروءة"""
     mark_all_messages_read(session['user_id'], 'admin')
     return jsonify({'success': True})
 @app.route('/admin/messages/unread_count')
-@login_required('admin')
+@login_required('admin', permission='send_messages')
 def admin_unread_count():
     """عدد الرسائل غير المقروءة للمشرف"""
     count = get_unread_count(session['user_id'], 'admin')
     return jsonify({'count': count})
 @app.route('/admin/messages/clear_chat', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='send_messages')
 def clear_admin_chat():
     """مسح محادثة المشرف"""
     data = request.get_json()
@@ -25253,7 +25404,7 @@ def clear_admin_chat():
 
 
 @app.route('/admin/student/<int:student_id>')
-@login_required(role='admin')
+@login_required(role='admin', permission='view_students')
 def admin_view_student(student_id):
     """عرض ملف طالب من قبل المشرف"""
     student = get_student_by_id(student_id)
@@ -25298,7 +25449,7 @@ def admin_view_student(student_id):
                                    datetime=datetime)
 
 @app.route('/admin/analytics')
-@login_required('admin')
+@login_required('admin', permission='view_analytics')
 def admin_analytics():
     """صفحة التحليلات"""
     students_count = query_one("SELECT COUNT(*) as count FROM students")['count']
@@ -25369,7 +25520,7 @@ def admin_analytics():
                                    new_students_month=5,
                                    datetime=datetime)
 @app.route('/admin/profile')
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def admin_profile():
     """ملف المشرف"""
     admin = get_current_user()
@@ -25382,7 +25533,7 @@ def admin_profile():
                                    last_active='اليوم',
                                    datetime=datetime)
 @app.route('/admin/profile/update', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def update_admin_profile():
     """تحديث ملف المشرف"""
     admin = get_current_user()
@@ -25405,7 +25556,7 @@ def update_admin_profile():
     
     return jsonify({'success': True, 'message': 'تم تحديث الملف بنجاح'})
 @app.route('/admin/assistants')
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def admin_assistants():
     """إدارة مساعدي المشرف"""
     assistants_list = get_assistants()
@@ -25433,6 +25584,8 @@ def admin_assistants():
         assistant['xp_due_date'] = xp_due.strftime('%Y-%m-%d') if xp_due and hasattr(xp_due, 'strftime') else (xp_due or '')
         last_xp = assistant.get('last_xp_granted')
         assistant['last_xp_granted'] = last_xp.strftime('%Y-%m-%d %H:%M:%S') if last_xp and hasattr(last_xp, 'strftime') else (last_xp or '')
+        granted = assistant.get('granted_at')
+        assistant['granted_at'] = granted.strftime('%Y-%m-%d %H:%M:%S') if granted and hasattr(granted, 'strftime') else (granted or '')
     
     return render_template_string(ASSISTANTS_HTML,
                                    assistants=assistants_list,
@@ -25441,7 +25594,7 @@ def admin_assistants():
                                    today=today,
                                    datetime=datetime)
 @app.route('/admin/assistants/add', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def add_assistant():
     """منح صلاحيات مساعد لطالب"""
     student_id = request.form.get('student_id')
@@ -25461,14 +25614,24 @@ def add_assistant():
     
     grant_assistant(student_id, ','.join(permissions), xp_due_date)
     return jsonify({'success': True, 'message': 'تم منح الصلاحيات بنجاح'})
+@app.route('/admin/assistants/update_permissions/<int:assistant_id>', methods=['POST'])
+@login_required('admin', permission='__ADMIN_ONLY__')
+def update_assistant_permissions_route(assistant_id):
+    """تعديل صلاحيات مساعد موجود"""
+    permissions = request.form.getlist('permissions')
+    if not permissions:
+        return jsonify({'success': False, 'message': 'الرجاء اختيار صلاحية واحدة على الأقل'})
+
+    update_assistant_permissions(assistant_id, ','.join(permissions))
+    return jsonify({'success': True, 'message': 'تم تحديث الصلاحيات بنجاح'})
 @app.route('/admin/assistants/revoke/<int:assistant_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def revoke_assistant_route(assistant_id):
     """سحب صلاحيات مساعد"""
     revoke_assistant(assistant_id)
     return jsonify({'success': True, 'message': 'تم سحب الصلاحيات'})
 @app.route('/admin/assistants/grant_xp/<int:assistant_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def grant_assistant_xp_route(assistant_id):
     """منح نقاط XP لمساعد"""
     data = request.get_json()
@@ -25481,7 +25644,7 @@ def grant_assistant_xp_route(assistant_id):
     grant_assistant_xp(assistant['student_id'], amount)
     return jsonify({'success': True, 'amount': amount})
 @app.route('/admin/assistants/reset_xp_due_date/<int:assistant_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def reset_assistant_xp_due_date(assistant_id):
     """تحديث تاريخ استحقاق XP للمساعد"""
     next_month = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')
@@ -25491,7 +25654,7 @@ def reset_assistant_xp_due_date(assistant_id):
     )
     return jsonify({'success': True, 'message': 'تم تجديد المنحة للشهر القادم'})
 @app.route('/admin/duels')
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def admin_duels():
     """إدارة التحديات الفردية"""
     duels = query_all("""
@@ -25508,7 +25671,7 @@ def admin_duels():
     
     return render_template_string(ADMIN_DUELS_HTML, duels=duels, datetime=datetime)
 @app.route('/admin/duels/action', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def duel_action():
     """تنفيذ إجراء على تحدي"""
     duel_id = request.form.get('duel_id')
@@ -25527,7 +25690,7 @@ def duel_action():
     
     return jsonify({'success': True})
 @app.route('/admin/store')
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def admin_store():
     """متجر المشرف"""
     books = get_all_books(active_only=False)
@@ -25547,7 +25710,7 @@ def admin_store():
                                    stats=stats,
                                    datetime=datetime)
 @app.route('/admin/store/add_book', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def add_admin_book():
     """إضافة كتاب في المتجر"""
     title = request.form.get('title')
@@ -25587,7 +25750,7 @@ def add_admin_book():
     create_book(book_data)
     return jsonify({'success': True, 'message': 'تم إضافة الكتاب بنجاح'})
 @app.route('/admin/store/toggle_book/<int:book_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def toggle_book_route(book_id):
     """تبديل حالة الكتاب"""
     book = get_book_by_id(book_id)
@@ -25596,13 +25759,13 @@ def toggle_book_route(book_id):
         return jsonify({'success': True})
     return jsonify({'success': False})
 @app.route('/admin/store/delete_book/<int:book_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def delete_book_route(book_id):
     """حذف كتاب"""
     delete_book(book_id)
     return jsonify({'success': True})
 @app.route('/admin/store/approve_offer', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def approve_book_offer():
     """الموافقة على عرض بيع كتاب"""
     offer_id = request.form.get('offer_id')
@@ -25616,7 +25779,7 @@ def approve_book_offer():
         return jsonify({'success': True, 'message': 'تمت الموافقة على العرض'})
     return jsonify({'success': False})
 @app.route('/admin/store/reject_offer', methods=['POST'])
-@login_required('admin')
+@login_required('admin', permission='__ADMIN_ONLY__')
 def reject_book_offer():
     """رفض عرض بيع كتاب"""
     offer_id = request.form.get('offer_id')
