@@ -34,7 +34,58 @@ def shade_hex(hex_color, factor):
     except Exception:
         return hex_color
 
+def build_theme_style(student):
+    """يبني كتلة CSS كاملة (:root overrides) بناءً على لون/تدرج الطالب المفعّل"""
+    if not student:
+        return ''
+    tc = student.get('theme_color') if hasattr(student, 'get') else None
+    if not tc:
+        return ''
+
+    if tc.startswith('grad:'):
+        try:
+            c1, c2 = tc[5:].split(',')
+        except Exception:
+            return ''
+        gold, gold_light = c1, c2
+        primary = f'linear-gradient(135deg, {shade_hex(c1, 0.5)}, {shade_hex(c2, 0.5)})'
+        primary_light = f'linear-gradient(135deg, {shade_hex(c1, 0.7)}, {shade_hex(c2, 0.7)})'
+        primary_dark = f'linear-gradient(135deg, {shade_hex(c1, 0.22)}, {shade_hex(c2, 0.22)})'
+        gold_glow = c1 + '26'
+    else:
+        gold = tc
+        gold_light = shade_hex(tc, 1.3)
+        primary = shade_hex(tc, 0.45)
+        primary_light = shade_hex(tc, 0.65)
+        primary_dark = shade_hex(tc, 0.22)
+        gold_glow = tc + '26'
+
+    return (
+        '<style>:root{'
+        f'--gold:{gold} !important;'
+        f'--gold-light:{gold_light} !important;'
+        f'--gold-glow:{gold_glow} !important;'
+        f'--primary:{primary} !important;'
+        f'--primary-light:{primary_light} !important;'
+        f'--primary-dark:{primary_dark} !important;'
+        '}</style>'
+    )
+
+def build_row_bg_style(theme_color):
+    """لون خلفية خفيف لسطر الطالب في الصدارة بناءً على لونه/تدرجه المفعّل"""
+    if not theme_color:
+        return ''
+    if theme_color.startswith('grad:'):
+        try:
+            c1, c2 = theme_color[5:].split(',')
+        except Exception:
+            return ''
+        return f'background:linear-gradient(90deg, {shade_hex(c1, 0.3)}, {shade_hex(c2, 0.3)}) !important;'
+    return f'background:{shade_hex(theme_color, 0.28)} !important;'
+
 app.jinja_env.filters['shade'] = shade_hex
+app.jinja_env.globals['theme_style'] = build_theme_style
+app.jinja_env.globals['row_bg_style'] = build_row_bg_style
 # ============================================================ #
 # ====== SECTION 1: CONFIGURATION ============================= #
 # ============================================================ #
@@ -141,11 +192,8 @@ def column_exists(table_name, column_name):
 # ============================================================ #
 # ====== SECTION 3: AUTHENTICATION HELPERS ==================== #
 # ============================================================ #
-def login_required(role=None, permission=None):
-    """مزخرف للتحقق من تسجيل الدخول مع دور محدد.
-    إذا تم تمرير permission، فالمساعد (assistant) يُسمح له بالدخول فقط إذا كانت
-    هذه الصلاحية من ضمن صلاحياته الممنوحة (has_assistant_permission). المشرف
-    الحقيقي (admin) يعدي دائماً بلا قيد."""
+def login_required(role=None):
+    """مزخرف للتحقق من تسجيل الدخول مع دور محدد"""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -153,18 +201,9 @@ def login_required(role=None, permission=None):
                 flash('الرجاء تسجيل الدخول أولاً', 'danger')
                 return redirect(url_for('home'))
             if role and session.get('role') != role:
-                # التحقق من صلاحيات المساعد: الطالب العادي (role='student') الذي يملك
-                # منحة مساعد نشطة (assistants.active=1) يُسمح له بدخول صفحات admin
-                # محددة، فقط ضمن الصلاحية المطلوبة لتلك الصفحة.
-                if role == 'admin' and session.get('role') == 'student' and get_active_assistant_record():
-                    # __ADMIN_ONLY__ = صفحة حساسة (حساب المشرف، إدارة المساعدين، السجل، المتجر...)
-                    # ممنوعة على أي مساعد نهائياً مهما كانت صلاحياته
-                    if permission == '__ADMIN_ONLY__':
-                        flash('هذه الصفحة مخصصة للمشرف فقط', 'danger')
-                        return redirect(url_for('student_assistant'))
-                    if permission and not has_assistant_permission(permission):
-                        flash('غير مصرح لك بالوصول إلى هذه الصفحة (صلاحية غير ممنوحة)', 'danger')
-                        return redirect(url_for('student_assistant'))
+                # التحقق من صلاحيات المساعد
+                if role == 'admin' and session.get('role') == 'assistant':
+                    # المساعد له صلاحيات محدودة
                     return f(*args, **kwargs)
                 flash('غير مصرح لك بالوصول إلى هذه الصفحة', 'danger')
                 return redirect(url_for('home'))
@@ -204,22 +243,18 @@ def get_current_user():
                 return dict(student, **dict(assistant))
         return student
     return None
-def get_active_assistant_record():
-    """يرجع سجل منحة المساعد النشطة للطالب الحالي (role='student') إن وجدت، وإلا None.
-    هذا هو المصدر الحقيقي لكون المستخدم 'مساعد' فعالاً، بما أن دور الجلسة يبقى
-    دائماً 'student' (لا يوجد role='assistant' منفصل يُستعمل عملياً)."""
-    if session.get('role') != 'student' or 'user_id' not in session:
-        return None
-    return query_one(
-        "SELECT * FROM assistants WHERE student_id = ? AND active = 1",
-        (session.get('user_id'),)
-    )
 def has_assistant_permission(permission):
-    """التحقق من صلاحية معينة: المشرف يملك كل الصلاحيات دائماً، والطالب صاحب
-    منحة مساعد نشطة يملكها فقط إذا كانت ضمن صلاحياته الممنوحة أو يملك 'view_all'."""
+    """التحقق من صلاحية المساعد"""
+    if session.get('role') != 'assistant' and session.get('role') != 'admin':
+        return False
+    
     if session.get('role') == 'admin':
         return True
-    assistant = get_active_assistant_record()
+    
+    assistant = query_one(
+        "SELECT permissions FROM assistants WHERE student_id = ? AND active = 1",
+        (session.get('user_id'),)
+    )
     if not assistant:
         return False
     perms = assistant['permissions'].split(',') if assistant['permissions'] else []
@@ -1366,15 +1401,24 @@ def get_student_purchases(student_id):
 # ================= متجر الألوان (ثيمات الواجهة) ============= #
 # ============================================================ #
 STORE_COLORS = [
-    {'id': 'gold',   'name': 'ذهبي (الافتراضي)', 'hex': '#c9a227', 'price': 0},
-    {'id': 'emerald','name': 'زمردي',             'hex': '#10b981', 'price': 150},
-    {'id': 'sapphire','name': 'أزرق ياقوتي',       'hex': '#2563eb', 'price': 150},
-    {'id': 'ruby',   'name': 'أحمر ياقوتي',        'hex': '#dc2626', 'price': 150},
-    {'id': 'amethyst','name': 'بنفسجي جوهري',      'hex': '#7c3aed', 'price': 200},
-    {'id': 'rose',   'name': 'وردي',               'hex': '#e11d48', 'price': 200},
-    {'id': 'teal',   'name': 'فيروزي',              'hex': '#0d9488', 'price': 200},
-    {'id': 'sunset', 'name': 'برتقالي غروب',        'hex': '#ea580c', 'price': 250},
+    {'id': 'gold',     'name': 'ذهبي (الافتراضي)', 'hex': '#c9a227', 'price': 0},
+    {'id': 'emerald',  'name': 'زمردي',             'hex': '#10b981', 'price': 250},
+    {'id': 'sapphire', 'name': 'أزرق ياقوتي',       'hex': '#2563eb', 'price': 250},
+    {'id': 'ruby',     'name': 'أحمر ياقوتي',       'hex': '#dc2626', 'price': 250},
+    {'id': 'amethyst', 'name': 'بنفسجي جوهري',      'hex': '#7c3aed', 'price': 250},
+    {'id': 'rose',     'name': 'وردي',               'hex': '#e11d48', 'price': 250},
+    {'id': 'teal',     'name': 'فيروزي',             'hex': '#0d9488', 'price': 250},
+    {'id': 'sunset',   'name': 'برتقالي غروب',       'hex': '#ea580c', 'price': 250},
+    {'id': 'lime',     'name': 'أخضر ليموني',       'hex': '#65a30d', 'price': 250},
+    {'id': 'sky',      'name': 'أزرق سماوي',        'hex': '#0ea5e9', 'price': 250},
+    {'id': 'fuchsia',  'name': 'فوشيا',              'hex': '#c026d3', 'price': 250},
+    {'id': 'indigo',   'name': 'نيلي',               'hex': '#4f46e5', 'price': 250},
+    {'id': 'amber',    'name': 'كهرماني',            'hex': '#d97706', 'price': 250},
+    {'id': 'crimson',  'name': 'قرمزي',              'hex': '#be123c', 'price': 250},
+    {'id': 'mint',     'name': 'نعناعي',             'hex': '#059669', 'price': 250},
+    {'id': 'slate',    'name': 'رمادي فولاذي',       'hex': '#475569', 'price': 250},
 ]
+GRADIENT_PRICE = 500
 
 def get_owned_color_ids(student):
     """قائمة معرّفات الألوان التي يملكها الطالب (اللون الافتراضي مملوك دائماً)"""
@@ -1383,6 +1427,11 @@ def get_owned_color_ids(student):
     if 'gold' not in ids:
         ids.append('gold')
     return ids
+
+def get_owned_gradient_pairs(student):
+    """قائمة أزواج التدرجات (id1-id2) التي يملكها الطالب"""
+    owned = (student.get('owned_theme_gradients') or '') if student else ''
+    return [p.strip() for p in owned.split(',') if p.strip()]
 
 def buy_theme_color(student_id, color_id):
     """شراء لون واجهة من المتجر وتفعيله مباشرة"""
@@ -1414,6 +1463,43 @@ def buy_theme_color(student_id, color_id):
     )
     return True, 'تم شراء اللون وتفعيله'
 
+def buy_theme_gradient(student_id, color_id_1, color_id_2):
+    """شراء تدرج بين لونين مملوكين وتفعيله (500 نقطة)"""
+    if color_id_1 == color_id_2:
+        return False, 'الرجاء اختيار لونين مختلفين'
+
+    c1 = next((c for c in STORE_COLORS if c['id'] == color_id_1), None)
+    c2 = next((c for c in STORE_COLORS if c['id'] == color_id_2), None)
+    if not c1 or not c2:
+        return False, 'لون غير موجود'
+
+    student = get_student_by_id(student_id)
+    if not student:
+        return False, 'الطالب غير موجود'
+
+    owned_ids = get_owned_color_ids(student)
+    if color_id_1 not in owned_ids or color_id_2 not in owned_ids:
+        return False, 'يجب امتلاك اللونين أولاً قبل دمجهما في تدرج'
+
+    pair_key = '-'.join(sorted([color_id_1, color_id_2]))
+    owned_pairs = get_owned_gradient_pairs(student)
+    theme_value = f"grad:{c1['hex']},{c2['hex']}"
+
+    if pair_key in owned_pairs:
+        execute_query("UPDATE students SET theme_color = ? WHERE id = ?", (theme_value, student_id))
+        return True, 'تم تفعيل التدرج'
+
+    if student['points'] < GRADIENT_PRICE:
+        return False, 'نقاط غير كافية'
+
+    deduct_points(student_id, GRADIENT_PRICE, f"شراء تدرج ألوان: {c1['name']} × {c2['name']}")
+    owned_pairs.append(pair_key)
+    execute_query(
+        "UPDATE students SET theme_color = ?, owned_theme_gradients = ? WHERE id = ?",
+        (theme_value, ','.join(owned_pairs), student_id)
+    )
+    return True, 'تم شراء التدرج وتفعيله'
+
 def set_active_theme_color(student_id, color_id):
     """تفعيل لون مملوك مسبقاً دون شراء (بما فيه العودة للون الافتراضي)"""
     color = next((c for c in STORE_COLORS if c['id'] == color_id), None)
@@ -1427,6 +1513,66 @@ def set_active_theme_color(student_id, color_id):
         return False
     execute_query("UPDATE students SET theme_color = ? WHERE id = ?", (color['hex'], student_id))
     return True
+
+# ============================================================ #
+# ============ تشفير معلومات الطالب في لوحة الصدارة =========== #
+# ============================================================ #
+ENCRYPT_INFO_PRICE = 2000
+UNLOCK_STUDENT_PRICE = 1000
+UNLOCK_DURATION_HOURS = 24
+
+def encrypt_my_info(student_id):
+    """تشفير معلوماتي (الاسم/النقاط/الشارات) في لوحة الصدارة مقابل 2000 نقطة"""
+    student = get_student_by_id(student_id)
+    if not student:
+        return False, 'الطالب غير موجود'
+    if student.get('info_encrypted'):
+        return False, 'معلوماتك مشفّرة بالفعل'
+    if student['points'] < ENCRYPT_INFO_PRICE:
+        return False, 'نقاط غير كافية'
+    deduct_points(student_id, ENCRYPT_INFO_PRICE, 'تشفير المعلومات في لوحة الصدارة')
+    execute_query("UPDATE students SET info_encrypted = 1 WHERE id = ?", (student_id,))
+    return True, 'تم تشفير معلوماتك في لوحة الصدارة'
+
+def decrypt_my_info(student_id):
+    """إظهار معلوماتي من جديد (مجاني)"""
+    execute_query("UPDATE students SET info_encrypted = 0 WHERE id = ?", (student_id,))
+    return True, 'تم إظهار معلوماتك من جديد'
+
+def unlock_student_info(viewer_id, target_id):
+    """فك تشفير معلومات طالب آخر لمدة 24 ساعة مقابل 1000 نقطة في كل مرة"""
+    if viewer_id == target_id:
+        return False, 'لا يمكنك فك تشفير معلوماتك الخاصة (استعمل زر الإظهار المجاني)'
+
+    viewer = get_student_by_id(viewer_id)
+    target = get_student_by_id(target_id)
+    if not viewer or not target:
+        return False, 'بيانات غير صالحة'
+
+    if viewer['points'] < UNLOCK_STUDENT_PRICE:
+        return False, 'نقاط غير كافية'
+
+    deduct_points(viewer_id, UNLOCK_STUDENT_PRICE, f"فك تشفير معلومات: {target.get('name', '')}")
+
+    expires_at = (datetime.now() + timedelta(hours=UNLOCK_DURATION_HOURS)).strftime('%Y-%m-%d %H:%M:%S')
+    execute_query("""
+        INSERT INTO student_unlocks (viewer_id, target_id, expires_at)
+        VALUES (?, ?, ?)
+        ON CONFLICT (viewer_id, target_id)
+        DO UPDATE SET expires_at = EXCLUDED.expires_at, created_at = CURRENT_TIMESTAMP
+    """, (viewer_id, target_id, expires_at))
+
+    return True, 'تم فك التشفير لمدة 24 ساعة'
+
+def get_unlocked_target_ids(viewer_id):
+    """قائمة معرّفات الطلاب الذين فكّ عنهم هذا المستخدم التشفير ولا يزال الفتح سارياً"""
+    if not viewer_id:
+        return set()
+    rows = query_all(
+        "SELECT target_id FROM student_unlocks WHERE viewer_id = ? AND expires_at > ?",
+        (viewer_id, get_today_datetime())
+    )
+    return {r['target_id'] for r in rows}
 
 def create_book_offer(data):
     """إنشاء عرض بيع كتاب من طالب"""
@@ -3281,25 +3427,46 @@ LEADERBOARD_HTML = '''
     {% if top_students|length >= 3 %}
     <div class="podium" id="podium">
         {% set top3 = top_students[:3] %}
-        <div class="podium-item second" onclick="showStudentProfile('{{ top3[1].id }}')">
+        <div class="podium-item second" onclick="{% if not top3[1].is_locked %}showStudentProfile('{{ top3[1].id }}'){% endif %}" style="{{ row_bg_style(top3[1].theme_color) }}">
             <span class="medal">🥈</span>
+            {% if top3[1].is_locked %}
+            <div class="avatar silver">🔒</div>
+            <div class="name">🔒 مستخدم مشفّر</div>
+            <div class="points">🔒</div>
+            <button class="btn btn-outline btn-xs" onclick="event.stopPropagation();unlockStudent('{{ top3[1].id }}')" style="margin-top:6px;">🔓 فك (1000 XP)</button>
+            {% else %}
             <div class="avatar silver">{{ top3[1].name[0]|upper }}</div>
             <div class="name">{{ top3[1].name }}</div>
             <div class="points">{{ top3[1].points|default(0, true) }} نقطة</div>
+            {% endif %}
             <div class="position">المركز الثاني</div>
         </div>
-        <div class="podium-item first" onclick="showStudentProfile('{{ top3[0].id }}')">
+        <div class="podium-item first" onclick="{% if not top3[0].is_locked %}showStudentProfile('{{ top3[0].id }}'){% endif %}" style="{{ row_bg_style(top3[0].theme_color) }}">
             <span class="medal">🥇</span>
+            {% if top3[0].is_locked %}
+            <div class="avatar gold">🔒</div>
+            <div class="name">🔒 مستخدم مشفّر</div>
+            <div class="points">🔒</div>
+            <button class="btn btn-outline btn-xs" onclick="event.stopPropagation();unlockStudent('{{ top3[0].id }}')" style="margin-top:6px;">🔓 فك (1000 XP)</button>
+            {% else %}
             <div class="avatar gold">{{ top3[0].name[0]|upper }}</div>
             <div class="name">{{ top3[0].name }}</div>
             <div class="points">{{ top3[0].points|default(0, true) }} نقطة</div>
+            {% endif %}
             <div class="position">🏆 البطل</div>
         </div>
-        <div class="podium-item third" onclick="showStudentProfile('{{ top3[2].id }}')">
+        <div class="podium-item third" onclick="{% if not top3[2].is_locked %}showStudentProfile('{{ top3[2].id }}'){% endif %}" style="{{ row_bg_style(top3[2].theme_color) }}">
             <span class="medal">🥉</span>
+            {% if top3[2].is_locked %}
+            <div class="avatar bronze">🔒</div>
+            <div class="name">🔒 مستخدم مشفّر</div>
+            <div class="points">🔒</div>
+            <button class="btn btn-outline btn-xs" onclick="event.stopPropagation();unlockStudent('{{ top3[2].id }}')" style="margin-top:6px;">🔓 فك (1000 XP)</button>
+            {% else %}
             <div class="avatar bronze">{{ top3[2].name[0]|upper }}</div>
             <div class="name">{{ top3[2].name }}</div>
             <div class="points">{{ top3[2].points|default(0, true) }} نقطة</div>
+            {% endif %}
             <div class="position">المركز الثالث</div>
         </div>
     </div>
@@ -3318,11 +3485,17 @@ LEADERBOARD_HTML = '''
         <div class="leaderboard-header"><div class="rank">#</div><div class="name">👤 الطالب</div><div class="points">⭐ النقاط</div><div class="badges">🏅 الشارات</div><div class="change">📈 التغيير</div></div>
         <div id="leaderboardRows">
             {% for student in top_students %}
-            <div class="leaderboard-row" data-rank="{{ loop.index }}" onclick="showStudentProfile('{{ student.id }}')">
+            <div class="leaderboard-row" data-rank="{{ loop.index }}" onclick="{% if not student.is_locked %}showStudentProfile('{{ student.id }}'){% endif %}" style="{{ row_bg_style(student.theme_color) }}">
                 <div class="rank">{% if loop.index == 1 %}<span class="medal">🥇</span>{% elif loop.index == 2 %}<span class="medal">🥈</span>{% elif loop.index == 3 %}<span class="medal">🥉</span>{% else %}<span class="num">{{ loop.index }}</span>{% endif %}</div>
+                {% if student.is_locked %}
+                <div class="name"><div class="avatar">🔒</div><div><div class="full-name">🔒 مستخدم مشفّر</div><div class="sub-info"><button class="btn btn-outline btn-xs" onclick="event.stopPropagation();unlockStudent('{{ student.id }}')">🔓 فك (1000 XP)</button></div></div></div>
+                <div class="points">🔒</div>
+                <div class="badges">🔒</div>
+                {% else %}
                 <div class="name"><div class="avatar {% if loop.index == 1 %}gold{% elif loop.index == 2 %}silver{% elif loop.index == 3 %}bronze{% endif %}">{{ student.name[0]|upper }}</div><div><div class="full-name">{{ student.name }}</div><div class="sub-info">📚 {{ student.rank|default(0, true) }} مستوى</div></div></div>
                 <div class="points">{{ student.points|default(0, true) }}</div>
                 <div class="badges">{% if loop.index <= 3 %}🏅🌟⭐{% elif loop.index <= 10 %}🏅🌟{% elif loop.index <= 25 %}🏅{% else %}<span class="empty">-</span>{% endif %}</div>
+                {% endif %}
                 <div class="change {% if loop.index <= 3 %}up{% elif loop.index <= 5 %}down{% else %}same{% endif %}">{% if loop.index <= 3 %}↑ +{{ 5 - loop.index + 1 }}{% elif loop.index <= 5 %}↓ -{{ loop.index - 3 }}{% else %}-{% endif %}</div>
             </div>
             {% else %}
@@ -3343,6 +3516,31 @@ LEADERBOARD_HTML = '''
 <button class="scroll-top" id="scrollTopBtn" onclick="scrollToTop()">⬆</button>
 <script>
 let currentFilter = 'all', searchQuery = '';
+
+function unlockStudent(targetId) {
+    if (!confirm('🔓 فك تشفير معلومات هذا الطالب لمدة 24 ساعة مقابل 1000 نقطة؟')) return;
+    fetch('/leaderboard/unlock/' + targetId, { method: 'POST' })
+        .then(function(r) {
+            if (r.redirected || r.status === 401 || r.status === 403) {
+                alert('يجب تسجيل الدخول كطالب أولاً لاستعمال هذه الميزة');
+                return null;
+            }
+            return r.json();
+        })
+        .then(function(data) {
+            if (!data) return;
+            if (data.success) {
+                alert('✅ ' + data.message);
+                location.reload();
+            } else {
+                alert('❌ ' + (data.message || 'حدث خطأ'));
+            }
+        })
+        .catch(function() {
+            alert('❌ حدث خطأ في الاتصال بالخادم');
+        });
+}
+
 function filterRank(filter, el) {
     currentFilter = filter;
     document.querySelectorAll('.filter-tabs .tab').forEach(t => t.classList.remove('active'));
@@ -12400,67 +12598,56 @@ MESSAGES_HTML = '''
                     <span class="search-icon">🔍</span>
                 </div>
 
-                <!-- المجموعات -->
+                <!-- محادثات موحّدة (مجموعات + فردية) مرتّبة حسب آخر نشاط -->
                 <div class="section-title">
-                    👥 المجموعات
-                    <span class="badge">{{ groups|length if groups else 0 }}</span>
+                    💬 المحادثات
+                    <span class="badge">{{ conversations|length if conversations else 0 }}</span>
                 </div>
-                <div id="groupsList">
-                    {% for group in groups %}
-                    <a href="/admin/messages?group={{ group.id }}"
-                       class="contact-item {% if group.id == selected_group_id %}active{% endif %} group-highlight-{{ group.color }}" 
-                       data-id="{{ group.id }}" 
-                       data-name="{{ group.name }}"
+                <div id="contactsList">
+                    {% for conv in conversations %}
+                    {% if conv.type == 'group' %}
+                    <a href="/admin/messages?group={{ conv.id }}"
+                       class="contact-item {% if conv.id == selected_group_id %}active{% endif %} group-highlight-{{ conv.color }}"
+                       data-id="{{ conv.id }}"
+                       data-name="{{ conv.name }}"
                        data-type="group"
                        style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;border:1px solid transparent;">
-                        <div class="avatar group-avatar group-color-{{ group.color }}">
+                        <div class="avatar group-avatar group-color-{{ conv.color }}">
                             <span class="group-icon">👥</span>
                         </div>
                         <div class="info">
                             <div class="name">
-                                {{ group.name }}
+                                {{ conv.name }}
                                 <span class="group-indicator">👥</span>
                             </div>
-                            <div class="last-msg">{{ group.last_message|default('لا توجد رسائل', true) }}</div>
+                            <div class="last-msg">{{ conv.last_message|default('لا توجد رسائل', true) }}</div>
                         </div>
-                        {% if group.unread > 0 %}
-                        <span class="badge">{{ group.unread }}</span>
+                        {% if conv.unread > 0 %}
+                        <span class="badge">{{ conv.unread }}</span>
                         {% endif %}
-                        <span class="time">{{ group.last_time|default('', true) }}</span>
+                        <span class="time">{{ conv.last_time|default('', true) }}</span>
                     </a>
                     {% else %}
-                    <div style="text-align:center;color:var(--text-muted);padding:8px 0;font-size:13px;">
-                        📭 لا توجد مجموعات
-                    </div>
-                    {% endfor %}
-                </div>
-
-                <!-- المحادثات الفردية -->
-                <div class="section-title">
-                    👤 المحادثات الفردية
-                    <span class="badge">{{ contacts|length if contacts else 0 }}</span>
-                </div>
-                <div id="contactsList">
-                    {% for contact in contacts %}
-                    <a href="/admin/messages?contact={{ contact.contact_id }}" 
-                       class="contact-item {% if contact.contact_id == selected_contact_id %}active{% endif %}" 
-                       data-id="{{ contact.contact_id }}" 
-                       data-name="{{ contact.name }}"
+                    <a href="/admin/messages?contact={{ conv.id }}"
+                       class="contact-item {% if conv.id == selected_contact_id %}active{% endif %}"
+                       data-id="{{ conv.id }}"
+                       data-name="{{ conv.name }}"
                        data-type="user"
                        style="text-decoration:none;color:inherit;display:flex;align-items:center;gap:10px;padding:8px 12px;border-radius:8px;border:1px solid transparent;">
-                        <div class="avatar user-avatar">{{ contact.name[0]|upper }}</div>
+                        <div class="avatar user-avatar">{{ conv.name[0]|upper }}</div>
                         <div class="info">
-                            <div class="name">{{ contact.name }}</div>
-                            <div class="last-msg">{{ contact.last_message|default('لا توجد رسائل', true) }}</div>
+                            <div class="name">{{ conv.name }}</div>
+                            <div class="last-msg">{{ conv.last_message|default('لا توجد رسائل', true) }}</div>
                         </div>
-                        {% if contact.unread > 0 %}
-                        <span class="badge">{{ contact.unread }}</span>
+                        {% if conv.unread > 0 %}
+                        <span class="badge">{{ conv.unread }}</span>
                         {% else %}
                         <span class="badge zero">0</span>
                         {% endif %}
-                        <span class="online-dot {% if contact.is_online %}online{% else %}offline{% endif %}"></span>
-                        <span class="time">{{ contact.last_time|default('', true) }}</span>
+                        <span class="online-dot {% if conv.is_online %}online{% else %}offline{% endif %}"></span>
+                        <span class="time">{{ conv.last_time|default('', true) }}</span>
                     </a>
+                    {% endif %}
                     {% else %}
                     <div style="text-align:center;color:var(--text-muted);padding:8px 0;font-size:13px;">
                         📭 لا توجد محادثات
@@ -15236,16 +15423,7 @@ STUDENT_DASHBOARD_HTML = '''
     </style>
 </head>
 <body>
-    {% if student and student.theme_color %}
-    <style>:root{
-        --gold: {{ student.theme_color }} !important;
-        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
-        --gold-glow: {{ student.theme_color }}26 !important;
-        --primary: {{ student.theme_color|shade(0.45) }} !important;
-        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
-        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
-    }</style>
-    {% endif %}
+    {{ theme_style(student)|safe }}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
@@ -16067,16 +16245,7 @@ ASSISTANT_DASHBOARD_HTML = '''
 </head>
 
 <body>
-    {% if student and student.theme_color %}
-    <style>:root{
-        --gold: {{ student.theme_color }} !important;
-        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
-        --gold-glow: {{ student.theme_color }}26 !important;
-        --primary: {{ student.theme_color|shade(0.45) }} !important;
-        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
-        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
-    }</style>
-    {% endif %}
+    {{ theme_style(student)|safe }}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -16673,16 +16842,7 @@ STUDENT_PROFILE_HTML = '''
     </style>
 </head>
 <body>
-    {% if student and student.theme_color %}
-    <style>:root{
-        --gold: {{ student.theme_color }} !important;
-        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
-        --gold-glow: {{ student.theme_color }}26 !important;
-        --primary: {{ student.theme_color|shade(0.45) }} !important;
-        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
-        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
-    }</style>
-    {% endif %}
+    {{ theme_style(student)|safe }}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
@@ -16719,6 +16879,16 @@ STUDENT_PROFILE_HTML = '''
             <div class="form-actions"><button type="reset" class="btn btn-outline">🔄 إعادة تعيين</button><button type="submit" class="btn btn-gold">💾 تحديث الملف</button></div>
         </form>
     </div>
+    <div class="profile-card" style="margin-top:16px;">
+        <h3 style="margin-bottom:10px;">🔐 خصوصية لوحة الصدارة</h3>
+        {% if student.info_encrypted %}
+        <p style="color:var(--text-muted);font-size:14px;margin-bottom:12px;">معلوماتك (الاسم والنقاط والشارات) مشفّرة حالياً في لوحة الصدارة، ويظهر مكانها 🔒. أي طالب آخر يريد رؤيتها يحتاج دفع 1000 نقطة لمدة 24 ساعة فقط.</p>
+        <button class="btn btn-outline btn-sm" onclick="decryptMyInfo()">👁️ إظهار معلوماتي من جديد (مجاناً)</button>
+        {% else %}
+        <p style="color:var(--text-muted);font-size:14px;margin-bottom:12px;">تشفير معلوماتك يخفي اسمك ونقاطك وشاراتك في لوحة الصدارة (تظهر 🔒 بدلاً منها). أي طالب يريد رؤيتها يدفع 1000 نقطة في كل مرة لمدة 24 ساعة فقط. فك التشفير عن نفسك لاحقاً مجاني دائماً.</p>
+        <button class="btn btn-gold btn-sm" onclick="encryptMyInfo()">🔒 تشفير معلوماتي في الصدارة (2000 نقطة)</button>
+        {% endif %}
+    </div>
     <div class="badges-section">
         <h3>🏅 شاراتي</h3>
         <div class="badges-grid">
@@ -16732,6 +16902,27 @@ STUDENT_PROFILE_HTML = '''
 </div>
 <div class="toast" id="toast"><div class="title" id="toastTitle">✅ تم</div><div class="message" id="toastMessage">تم تنفيذ العملية بنجاح</div></div>
 <script>
+function encryptMyInfo() {
+    if (!confirm('🔒 تأكيد تشفير معلوماتك في لوحة الصدارة مقابل 2000 نقطة؟')) return;
+    fetch('/student/profile/encrypt_info', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) { showToast('success', '✅ تم', data.message); setTimeout(() => location.reload(), 1200); }
+            else { showToast('error', '❌ خطأ', data.message || 'حدث خطأ'); }
+        })
+        .catch(() => showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال بالخادم'));
+}
+
+function decryptMyInfo() {
+    fetch('/student/profile/decrypt_info', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) { showToast('success', '✅ تم', data.message); setTimeout(() => location.reload(), 1000); }
+            else { showToast('error', '❌ خطأ', data.message || 'حدث خطأ'); }
+        })
+        .catch(() => showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال بالخادم'));
+}
+
 function saveProfile(event) {
     event.preventDefault();
     const form = event.target;
@@ -17358,16 +17549,7 @@ STUDENT_REPORT_HTML = '''
 </head>
 
 <body>
-    {% if student and student.theme_color %}
-    <style>:root{
-        --gold: {{ student.theme_color }} !important;
-        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
-        --gold-glow: {{ student.theme_color }}26 !important;
-        --primary: {{ student.theme_color|shade(0.45) }} !important;
-        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
-        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
-    }</style>
-    {% endif %}
+    {{ theme_style(student)|safe }}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -18626,16 +18808,7 @@ STUDENT_HOMEWORK_HTML = '''
 </head>
 
 <body>
-    {% if student and student.theme_color %}
-    <style>:root{
-        --gold: {{ student.theme_color }} !important;
-        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
-        --gold-glow: {{ student.theme_color }}26 !important;
-        --primary: {{ student.theme_color|shade(0.45) }} !important;
-        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
-        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
-    }</style>
-    {% endif %}
+    {{ theme_style(student)|safe }}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -19747,16 +19920,7 @@ STUDENT_COMPETITIONS_HTML = '''
 </head>
 
 <body>
-    {% if student and student.theme_color %}
-    <style>:root{
-        --gold: {{ student.theme_color }} !important;
-        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
-        --gold-glow: {{ student.theme_color }}26 !important;
-        --primary: {{ student.theme_color|shade(0.45) }} !important;
-        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
-        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
-    }</style>
-    {% endif %}
+    {{ theme_style(student)|safe }}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -20261,16 +20425,7 @@ STUDENT_GAMIFICATION_HTML = '''
     </style>
 </head>
 <body>
-    {% if student and student.theme_color %}
-    <style>:root{
-        --gold: {{ student.theme_color }} !important;
-        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
-        --gold-glow: {{ student.theme_color }}26 !important;
-        --primary: {{ student.theme_color|shade(0.45) }} !important;
-        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
-        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
-    }</style>
-    {% endif %}
+    {{ theme_style(student)|safe }}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
@@ -21088,16 +21243,7 @@ STUDENT_MESSAGES_HTML = '''
 </head>
 
 <body>
-    {% if student and student.theme_color %}
-    <style>:root{
-        --gold: {{ student.theme_color }} !important;
-        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
-        --gold-glow: {{ student.theme_color }}26 !important;
-        --primary: {{ student.theme_color|shade(0.45) }} !important;
-        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
-        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
-    }</style>
-    {% endif %}
+    {{ theme_style(student)|safe }}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -21135,69 +21281,29 @@ STUDENT_MESSAGES_HTML = '''
         <!-- ===== تخطيط الرسائل ===== -->
         <div class="messages-layout">
 
-            <!-- ===== قائمة جهات الاتصال ===== -->
+            <!-- ===== قائمة جهات الاتصال (موحّدة ومرتّبة حسب آخر نشاط، مثل Messenger) ===== -->
             <div class="contacts-sidebar">
-                {% if admin_contact %}
-                <div class="sidebar-title">🕌 المشرف</div>
-                <div id="adminContact">
-                    <div class="contact-item {% if selected_contact_type == 'admin' and admin_contact.contact_id == selected_contact_id %}active{% endif %}"
-                         onclick="selectContact('{{ admin_contact.contact_id }}', 'admin')">
-                        <div class="avatar">🕌</div>
-                        <div class="info">
-                            <div class="name">{{ admin_contact.name }}</div>
-                            <div class="last-msg">{{ admin_contact.last_message|default('لا توجد رسائل', true) }}</div>
-                        </div>
-                        {% if admin_contact.unread > 0 %}
-                        <span class="badge">{{ admin_contact.unread }}</span>
-                        {% else %}
-                        <span class="badge zero">0</span>
-                        {% endif %}
-                        <span class="time">{{ admin_contact.last_time|default('', true) }}</span>
-                    </div>
-                </div>
-                {% endif %}
-                {% if groups %}
-                <div class="sidebar-title">👥 المجموعات</div>
-                <div id="groupsList">
-                    {% for group in groups %}
-                    <div class="contact-item {% if group.id == selected_group_id %}active{% endif %}"
-                         onclick="selectGroup('{{ group.id }}')">
-                        <div class="avatar">👥</div>
-                        <div class="info">
-                            <div class="name">{{ group.name }}</div>
-                            <div class="last-msg">مجموعة رسائل</div>
-                        </div>
-                        {% if group.unread > 0 %}
-                        <span class="badge">{{ group.unread }}</span>
-                        {% else %}
-                        <span class="badge zero">0</span>
-                        {% endif %}
-                    </div>
-                    {% endfor %}
-                </div>
-                {% endif %}
                 <div class="sidebar-title">📋 المحادثات</div>
-                <div id="contactsList">
-                    {% for contact in contacts %}
-                    <div class="contact-item {% if selected_contact_type != 'admin' and contact.contact_id == selected_contact_id %}active{% endif %}" 
-                         onclick="selectContact('{{ contact.contact_id }}', 'student')">
-                        <div class="avatar">{{ contact.name[0]|upper }}</div>
+                <div id="conversationsList">
+                    {% for conv in conversations %}
+                    <div class="contact-item {% if conv.type == 'group' and conv.id == selected_group_id %}active{% elif conv.type == 'admin' and selected_contact_type == 'admin' and conv.id == selected_contact_id %}active{% elif conv.type == 'user' and selected_contact_type != 'admin' and conv.id == selected_contact_id %}active{% endif %}"
+                         onclick="{% if conv.type == 'group' %}selectGroup('{{ conv.id }}'){% else %}selectContact('{{ conv.id }}', '{{ conv.type }}'){% endif %}">
+                        <div class="avatar">{% if conv.type == 'admin' %}🕌{% elif conv.type == 'group' %}👥{% else %}{{ conv.name[0]|upper }}{% endif %}</div>
                         <div class="info">
-                            <div class="name">{{ contact.name }}</div>
-                            <div class="last-msg">{{ contact.last_message|default('لا توجد رسائل', true) }}</div>
+                            <div class="name">{{ conv.name }}</div>
+                            <div class="last-msg">{{ conv.last_message|default('لا توجد رسائل', true) }}</div>
                         </div>
-                        {% if contact.unread > 0 %}
-                        <span class="badge">{{ contact.unread }}</span>
+                        {% if conv.unread and conv.unread > 0 %}
+                        <span class="badge">{{ conv.unread }}</span>
                         {% else %}
                         <span class="badge zero">0</span>
                         {% endif %}
-                        <span class="online-dot {% if contact.is_online %}online{% else %}offline{% endif %}"></span>
-                        <span class="time">{{ contact.last_time|default('', true) }}</span>
+                        {% if conv.type == 'user' %}
+                        <span class="online-dot {% if conv.is_online %}online{% else %}offline{% endif %}"></span>
+                        {% endif %}
                     </div>
                     {% else %}
-                    <div style="text-align:center;color:var(--text-muted);padding:20px 0;font-size:14px;">
-                        📭 لا توجد محادثات
-                    </div>
+                    <div style="padding:20px;text-align:center;color:var(--text-muted);font-size:13px;">لا توجد محادثات بعد</div>
                     {% endfor %}
                 </div>
             </div>
@@ -22099,16 +22205,7 @@ STUDENT_POINTS_HTML = '''
     </style>
 </head>
 <body>
-    {% if student and student.theme_color %}
-    <style>:root{
-        --gold: {{ student.theme_color }} !important;
-        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
-        --gold-glow: {{ student.theme_color }}26 !important;
-        --primary: {{ student.theme_color|shade(0.45) }} !important;
-        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
-        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
-    }</style>
-    {% endif %}
+    {{ theme_style(student)|safe }}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
@@ -22913,16 +23010,7 @@ STUDENT_STORE_HTML = '''
 </head>
 
 <body>
-    {% if student and student.theme_color %}
-    <style>:root{
-        --gold: {{ student.theme_color }} !important;
-        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
-        --gold-glow: {{ student.theme_color }}26 !important;
-        --primary: {{ student.theme_color|shade(0.45) }} !important;
-        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
-        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
-    }</style>
-    {% endif %}
+    {{ theme_style(student)|safe }}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -22981,6 +23069,29 @@ STUDENT_STORE_HTML = '''
                     {% endif %}
                 </div>
                 {% endfor %}
+            </div>
+
+            <div style="margin-top:28px;padding:18px;border:1px dashed rgba(201,162,39,0.35);border-radius:14px;">
+                <h3 style="margin-bottom:6px;">🌈 دمج تدرج بين لونين ({{ gradient_price }} نقطة)</h3>
+                <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px;">اختر لونين تملكهما بالفعل لدمجهما في تدرج مميّز لواجهتك.</p>
+                {% if owned_color_ids|length < 2 %}
+                <p style="color:var(--text-muted);">تحتاج امتلاك لونين على الأقل قبل صنع تدرج بينهما.</p>
+                {% else %}
+                <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
+                    <select id="gradientColor1" style="padding:8px 12px;border-radius:8px;">
+                        {% for color in store_colors %}{% if color.id in owned_color_ids %}
+                        <option value="{{ color.id }}">{{ color.name }}</option>
+                        {% endif %}{% endfor %}
+                    </select>
+                    <span>×</span>
+                    <select id="gradientColor2" style="padding:8px 12px;border-radius:8px;">
+                        {% for color in store_colors %}{% if color.id in owned_color_ids %}
+                        <option value="{{ color.id }}">{{ color.name }}</option>
+                        {% endif %}{% endfor %}
+                    </select>
+                    <button class="btn btn-gold btn-sm" onclick="buyGradient()">🌈 شراء ودمج ({{ gradient_price }} نقطة)</button>
+                </div>
+                {% endif %}
             </div>
         </div>
 
@@ -23235,6 +23346,34 @@ STUDENT_STORE_HTML = '''
                     if (data.success) {
                         showToast('success', '✅ تم', data.message || 'تم تفعيل اللون');
                         setTimeout(function() { location.reload(); }, 1000);
+                    } else {
+                        showToast('error', '❌ خطأ', data.message || 'حدث خطأ');
+                    }
+                })
+                .catch(function() {
+                    showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال بالخادم');
+                });
+        }
+
+        function buyGradient() {
+            const c1 = document.getElementById('gradientColor1').value;
+            const c2 = document.getElementById('gradientColor2').value;
+            if (!c1 || !c2 || c1 === c2) {
+                showToast('error', '❌ خطأ', 'الرجاء اختيار لونين مختلفين');
+                return;
+            }
+            if (!confirm('🌈 تأكيد شراء ودمج هذا التدرج؟')) return;
+
+            const formData = new FormData();
+            formData.append('color1', c1);
+            formData.append('color2', c2);
+
+            fetch('/student/store/buy_gradient', { method: 'POST', body: formData })
+                .then(function(r) { return r.json(); })
+                .then(function(data) {
+                    if (data.success) {
+                        showToast('success', '✅ تم', data.message || 'تم شراء التدرج وتفعيله');
+                        setTimeout(function() { location.reload(); }, 1200);
                     } else {
                         showToast('error', '❌ خطأ', data.message || 'حدث خطأ');
                     }
@@ -23876,16 +24015,7 @@ STUDENT_DUELS_HTML = '''
 </head>
 
 <body>
-    {% if student and student.theme_color %}
-    <style>:root{
-        --gold: {{ student.theme_color }} !important;
-        --gold-light: {{ student.theme_color|shade(1.3) }} !important;
-        --gold-glow: {{ student.theme_color }}26 !important;
-        --primary: {{ student.theme_color|shade(0.45) }} !important;
-        --primary-light: {{ student.theme_color|shade(0.65) }} !important;
-        --primary-dark: {{ student.theme_color|shade(0.22) }} !important;
-    }</style>
-    {% endif %}
+    {{ theme_style(student)|safe }}
     <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
@@ -24175,171 +24305,17 @@ STUDENT_DUELS_HTML = '''
 # ============================================================ #
 # ----- الصفحة الرئيسية -----
 @app.route('/admin/session_history')
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def admin_session_history():
     """سجل الحصص (قيد التطوير)"""
     flash('هذه الميزة قيد التطوير حالياً', 'info')
     return redirect(url_for('admin_dashboard'))
-ASSISTANT_PANEL_HTML = '''
-<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لوحة المساعد - حلقتي زتاي</title>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --primary: #134e5e; --primary-light: #1a7a8e; --primary-dark: #0a2a32;
-            --gold: #c9a227; --gold-light: #e8c84a; --gold-glow: rgba(201,162,39,0.15);
-            --glass: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.10);
-            --text-primary: #ffffff; --text-secondary: rgba(255,255,255,0.7); --text-muted: rgba(255,255,255,0.35);
-            --shadow: 0 8px 32px rgba(0,0,0,0.3); --transition: 0.3s ease;
-            --success: #4ade80; --danger: #f87171; --warning: #fbbf24; --info: #60a5fa;
-        }
-        body { font-family: 'Tajawal', sans-serif; background: var(--primary-dark); min-height: 100vh; color: var(--text-primary); }
-        .bg-layer { position: fixed; inset: 0; z-index: 0; pointer-events: none;
-            background: radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.10), transparent),
-                        radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent); }
-        .container { max-width: 1100px; margin: 0 auto; padding: 20px; position: relative; z-index: 1; }
-        .header { display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 14px;
-            padding: 18px 22px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 16px;
-            margin-bottom: 20px; backdrop-filter: blur(10px); }
-        .header h1 { font-size: 21px; font-weight: 800; }
-        .header .sub { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
-        .badge-active { background: rgba(74,222,128,0.15); color: var(--success); border: 1px solid rgba(74,222,128,0.35);
-            padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: 700; }
-        .stats-row { display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 20px; }
-        .stat-box { flex: 1; min-width: 140px; background: var(--glass); border: 1px solid var(--glass-border);
-            border-radius: 14px; padding: 14px 16px; text-align: center; }
-        .stat-box .val { font-size: 22px; font-weight: 900; color: var(--gold-light); }
-        .stat-box .lbl { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
-        .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 14px; }
-        .card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 16px; padding: 18px;
-            transition: var(--transition); text-decoration: none; color: inherit; display: block; }
-        .card:not(.disabled):hover { transform: translateY(-3px); border-color: var(--gold); box-shadow: var(--shadow); }
-        .card.disabled { opacity: 0.5; cursor: not-allowed; }
-        .card .icon { font-size: 26px; margin-bottom: 10px; }
-        .card .title { font-size: 15px; font-weight: 800; margin-bottom: 6px; }
-        .card .desc { font-size: 12.5px; color: var(--text-secondary); line-height: 1.6; }
-        .card .soon { display: inline-block; margin-top: 10px; font-size: 11px; background: rgba(251,191,36,0.15);
-            color: var(--warning); padding: 3px 10px; border-radius: 10px; font-weight: 700; }
-        .empty-state { text-align: center; padding: 60px 20px; color: var(--text-muted); }
-        .back-link { display: inline-block; margin-bottom: 16px; color: var(--text-secondary); text-decoration: none; font-size: 13px; }
-        .back-link:hover { color: var(--gold-light); }
-    </style>
-</head>
-<body>
-<div class="bg-layer"></div>
-<div class="container">
-    <a href="{{ url_for('student_dashboard') }}" class="back-link">→ الرجوع للوحة الطالب</a>
-    <div class="header">
-        <div>
-            <h1>🧑‍🤝‍🧑 لوحة المساعد</h1>
-            <div class="sub">مرحباً {{ student.name if student else '' }} — هذه الصفحة تعرض فقط الصلاحيات الممنوحة لك</div>
-        </div>
-        <span class="badge-active">✅ منحة نشطة{% if has_view_all %} · صلاحيات كاملة{% endif %}</span>
-    </div>
-
-    <div class="stats-row">
-        <div class="stat-box"><div class="val">{{ assistant.xp_points|default(0, true) }}</div><div class="lbl">⭐ نقاط XP</div></div>
-        <div class="stat-box"><div class="val">{{ actions_count }}</div><div class="lbl">📊 عدد الإجراءات</div></div>
-        <div class="stat-box"><div class="val">{{ granted_at }}</div><div class="lbl">📅 تاريخ المنح</div></div>
-        <div class="stat-box"><div class="val">{{ xp_due_date }}</div><div class="lbl">📅 المنحة القادمة</div></div>
-    </div>
-
-    {% if sections %}
-    <div class="grid">
-        {% for s in sections %}
-            {% if s.url %}
-            <a href="{{ s.url }}" class="card">
-                <div class="icon">{{ s.icon }}</div>
-                <div class="title">{{ s.title }}</div>
-                <div class="desc">{{ s.desc }}</div>
-            </a>
-            {% else %}
-            <div class="card disabled">
-                <div class="icon">{{ s.icon }}</div>
-                <div class="title">{{ s.title }}</div>
-                <div class="desc">{{ s.desc }}</div>
-                <span class="soon">قريباً</span>
-            </div>
-            {% endif %}
-        {% endfor %}
-    </div>
-    {% else %}
-    <div class="empty-state">
-        <div style="font-size:40px;margin-bottom:10px;">🔒</div>
-        لا توجد صلاحيات ممنوحة لك حالياً. تواصل مع المشرف.
-    </div>
-    {% endif %}
-</div>
-</body>
-</html>
-'''
 @app.route('/student/assistant')
 @login_required('student')
 def student_assistant():
-    """لوحة المساعد: تعرض للطالب صاحب منحة المساعد النشطة الصلاحيات
-    الممنوحة له فقط، مع روابط مباشرة للصفحات المتاحة."""
-    assistant = get_active_assistant_record()
-    if not assistant:
-        flash('ليست لديك صلاحيات مساعد نشطة حالياً', 'info')
-        return redirect(url_for('student_dashboard'))
-
-    student = get_current_user()
-    perms = assistant['permissions'].split(',') if assistant['permissions'] else []
-    has_view_all = 'view_all' in perms
-
-    # كل صلاحية: التسمية، الأيقونة، الوصف، ورابط الصفحة (None = قريباً)
-    PERMISSION_SECTIONS = [
-        {'key': 'view_students', 'icon': '👁️', 'title': 'عرض الطلاب', 'desc': 'استعراض قائمة الطلاب وملفاتهم.', 'endpoint': 'manage_students'},
-        {'key': 'manage_students', 'icon': '👨‍🎓', 'title': 'إدارة الطلاب', 'desc': 'إضافة/تعديل بيانات الطلاب وحالتهم.', 'endpoint': 'manage_students'},
-        {'key': 'send_messages', 'icon': '💬', 'title': 'إرسال رسائل', 'desc': 'مراسلة الطلاب وأولياء الأمور.', 'endpoint': 'admin_messages'},
-        {'key': 'grade_homework', 'icon': '📚', 'title': 'تقييم واجبات', 'desc': 'تصحيح ومتابعة واجبات الطلاب.', 'endpoint': 'homework'},
-        {'key': 'manage_evaluation', 'icon': '📊', 'title': 'تقييم يومي', 'desc': 'إدخال درجات الحفظ والتقييم اليومي.', 'endpoint': 'evaluation'},
-        {'key': 'manage_sessions', 'icon': '🗂️', 'title': 'إدارة الحصص', 'desc': 'إضافة وتعديل الحصص اليومية.', 'endpoint': 'evaluation'},
-        {'key': 'manage_competitions', 'icon': '🏆', 'title': 'إدارة مسابقات', 'desc': 'إنشاء المسابقات ورصد النتائج.', 'endpoint': 'competitions'},
-        {'key': 'view_analytics', 'icon': '📈', 'title': 'عرض تحليلات', 'desc': 'إحصائيات ومؤشرات أداء الحلقة.', 'endpoint': 'admin_analytics'},
-        {'key': 'manage_attendance', 'icon': '📋', 'title': 'إدارة الحضور', 'desc': 'تسجيل ومتابعة حضور الطلاب.', 'endpoint': None},
-        {'key': 'export_data', 'icon': '📥', 'title': 'تصدير البيانات', 'desc': 'تصدير بيانات الطلاب والتقارير.', 'endpoint': None},
-        {'key': 'manage_reports', 'icon': '📊', 'title': 'إدارة التقارير', 'desc': 'إنشاء ومراجعة تقارير الطلاب.', 'endpoint': None},
-        {'key': 'manage_announcements', 'icon': '📢', 'title': 'إدارة الإعلانات', 'desc': 'نشر إعلانات للطلاب.', 'endpoint': None},
-        {'key': 'manage_events', 'icon': '🎪', 'title': 'إدارة الفعاليات', 'desc': 'تنظيم فعاليات ومناسبات الحلقة.', 'endpoint': None},
-        {'key': 'manage_badges', 'icon': '🏅', 'title': 'إدارة الشارات', 'desc': 'منح شارات إنجاز للطلاب.', 'endpoint': None},
-    ]
-
-    sections = []
-    for perm in PERMISSION_SECTIONS:
-        granted = has_view_all or perm['key'] in perms
-        if not granted:
-            continue
-        url = None
-        if perm['endpoint']:
-            try:
-                url = url_for(perm['endpoint'])
-            except Exception:
-                url = None
-        sections.append(dict(perm, url=url))
-
-    actions_count = query_one(
-        "SELECT COUNT(*) as count FROM assistant_actions WHERE assistant_id = ?",
-        (assistant['id'],)
-    )
-    xp_due = assistant.get('xp_due_date')
-    granted_at = assistant.get('granted_at')
-
-    return render_template_string(ASSISTANT_PANEL_HTML,
-                                   student=student,
-                                   assistant=assistant,
-                                   sections=sections,
-                                   has_view_all=has_view_all,
-                                   actions_count=actions_count['count'] if actions_count else 0,
-                                   xp_due_date=xp_due.strftime('%Y-%m-%d') if xp_due and hasattr(xp_due, 'strftime') else (xp_due or '-'),
-                                   granted_at=granted_at.strftime('%Y-%m-%d') if granted_at and hasattr(granted_at, 'strftime') else (granted_at or '-'),
-                                   datetime=datetime)
+    """لوحة المساعد (قيد التطوير)"""
+    flash('هذه الميزة قيد التطوير حالياً', 'info')
+    return redirect(url_for('student_dashboard'))
 @app.route('/logout')
 def logout():
     """تسجيل الخروج"""
@@ -24488,7 +24464,7 @@ def admin_dashboard():
                                    recent_evaluations=recent_evaluations, recent_activities=recent_activities,
                                    notifications_count=unread_messages, datetime=datetime)
 @app.route('/admin/students', methods=['GET', 'POST'])
-@login_required('admin', permission='view_students')
+@login_required('admin')
 def manage_students():
     """إدارة الطلاب"""
     if request.method == 'POST':
@@ -24559,7 +24535,7 @@ def manage_students():
     
     return render_template_string(MANAGE_STUDENTS_HTML, students=students, fixed_ids=fixed_ids)
 @app.route('/admin/students/toggle/<int:student_id>', methods=['POST'])
-@login_required('admin', permission='manage_students')
+@login_required('admin')
 def toggle_student_status(student_id):
     """تبديل حالة الطالب"""
     student = get_student_by_id(student_id)
@@ -24569,7 +24545,7 @@ def toggle_student_status(student_id):
         return jsonify({'success': True})
     return jsonify({'success': False}), 404
 @app.route('/admin/students/delete/<int:student_id>', methods=['POST'])
-@login_required('admin', permission='manage_students')
+@login_required('admin')
 def delete_student_route(student_id):
     """حذف طالب"""
     # منع حذف الطالب الافتراضي
@@ -24579,7 +24555,7 @@ def delete_student_route(student_id):
     delete_student(student_id)
     return jsonify({'success': True})
 @app.route('/admin/students/bulk', methods=['POST'])
-@login_required('admin', permission='manage_students')
+@login_required('admin')
 def bulk_student_action():
     """إجراء جماعي على الطلاب"""
     data = request.get_json()
@@ -24600,7 +24576,7 @@ def bulk_student_action():
     
     return jsonify({'success': True})
 @app.route('/admin/students/update_rank', methods=['POST'])
-@login_required('admin', permission='manage_students')
+@login_required('admin')
 def update_student_rank():
     """تحديث ترتيب الطالب"""
     data = request.get_json()
@@ -24612,13 +24588,13 @@ def update_student_rank():
         return jsonify({'success': True})
     return jsonify({'success': False})
 @app.route('/admin/requests')
-@login_required('admin', permission='manage_students')
+@login_required('admin')
 def registration_requests():
     """طلبات التسجيل"""
     requests = query_all("SELECT * FROM registration_requests ORDER BY created_at DESC")
     return render_template_string(REGISTRATION_REQUESTS_HTML, requests=requests, datetime=datetime)
 @app.route('/admin/requests/accept/<int:request_id>', methods=['POST'])
-@login_required('admin', permission='manage_students')
+@login_required('admin')
 def accept_registration(request_id):
     """قبول طلب تسجيل"""
     req = query_one("SELECT * FROM registration_requests WHERE id = ?", (request_id,))
@@ -24644,7 +24620,7 @@ def accept_registration(request_id):
     
     return jsonify({'success': True, 'student_id': student_id})
 @app.route('/admin/requests/reject/<int:request_id>', methods=['POST'])
-@login_required('admin', permission='manage_students')
+@login_required('admin')
 def reject_registration(request_id):
     """رفض طلب تسجيل"""
     execute_query(
@@ -24653,7 +24629,7 @@ def reject_registration(request_id):
     )
     return jsonify({'success': True})
 @app.route('/admin/requests/check_new')
-@login_required('admin', permission='manage_students')
+@login_required('admin')
 def check_new_requests():
     """التحقق من الطلبات الجديدة"""
     pending = query_one("SELECT COUNT(*) as count FROM registration_requests WHERE status = 'pending'")
@@ -24662,7 +24638,7 @@ def check_new_requests():
         'pending_count': pending['count'] if pending else 0
     })
 @app.route('/admin/evaluation')
-@login_required('admin', permission='manage_evaluation')
+@login_required('admin')
 def evaluation():
     """صفحة التقييم وسجل الحصص"""
     students = get_active_students()
@@ -24699,7 +24675,7 @@ def evaluation():
                                    datetime=datetime,
                                    timedelta=timedelta)
 @app.route('/admin/evaluation/add_month', methods=['POST'])
-@login_required('admin', permission='manage_evaluation')
+@login_required('admin')
 def add_month():
     """إضافة شهر جديد"""
     data = request.get_json()
@@ -24714,13 +24690,13 @@ def add_month():
     )
     return jsonify({'success': True, 'month_id': month_id})
 @app.route('/admin/evaluation/delete_month/<int:month_id>', methods=['DELETE'])
-@login_required('admin', permission='manage_evaluation')
+@login_required('admin')
 def delete_month(month_id):
     """حذف شهر"""
     execute_query("DELETE FROM months WHERE id = ?", (month_id,))
     return jsonify({'success': True})
 @app.route('/admin/evaluation/add_session', methods=['POST'])
-@login_required('admin', permission='manage_sessions')
+@login_required('admin')
 def add_session():
     """إضافة حصة جديدة"""
     data = request.get_json()
@@ -24750,7 +24726,7 @@ def add_session():
     
     return jsonify({'success': True, 'session_id': session_id})
 @app.route('/admin/evaluation/add_session_all', methods=['POST'])
-@login_required('admin', permission='manage_sessions')
+@login_required('admin')
 def add_session_all():
     """تسجيل حصة لكل الطلاب النشطين دفعة واحدة"""
     data = request.get_json()
@@ -24803,13 +24779,13 @@ def add_session_all():
         message += f' (تم تجاوز {skipped_count} كان لديهم حصة مسجلة مسبقاً بنفس التاريخ)'
     return jsonify({'success': True, 'added_count': added_count, 'skipped_count': skipped_count, 'message': message})
 @app.route('/admin/evaluation/delete_session/<int:session_id>', methods=['DELETE'])
-@login_required('admin', permission='manage_sessions')
+@login_required('admin')
 def delete_session(session_id):
     """حذف حصة"""
     execute_query("DELETE FROM sessions WHERE id = ?", (session_id,))
     return jsonify({'success': True})
 @app.route('/admin/evaluation/save_sessions', methods=['POST'])
-@login_required('admin', permission='manage_evaluation')
+@login_required('admin')
 def save_sessions():
     """حفظ بيانات التقييمات"""
     data = request.get_json()
@@ -24833,7 +24809,7 @@ def save_sessions():
     
     return jsonify({'success': True})
 @app.route('/admin/evaluation/send_sessions', methods=['POST'])
-@login_required('admin', permission='manage_sessions')
+@login_required('admin')
 def send_sessions():
     """إرسال التقييمات للطلاب ومكافأتهم تلقائياً بنقاط XP حسب درجاتهم"""
     data = request.get_json()
@@ -24865,7 +24841,7 @@ def send_sessions():
     
     return jsonify({'success': True, 'sent_count': sent_count})
 @app.route('/admin/evaluation/copy_previous', methods=['POST'])
-@login_required('admin', permission='manage_evaluation')
+@login_required('admin')
 def copy_previous_evaluation():
     """نسخ تقييمات الأمس إلى اليوم"""
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
@@ -24903,7 +24879,7 @@ def copy_previous_evaluation():
     
     return jsonify({'success': True})
 @app.route('/admin/homework')
-@login_required('admin', permission='grade_homework')
+@login_required('admin')
 def homework():
     """إدارة الواجبات"""
     students = get_active_students()
@@ -24933,7 +24909,7 @@ def homework():
                                    datetime=datetime,
                                    timedelta=timedelta)
 @app.route('/admin/homework/add', methods=['POST'])
-@login_required('admin', permission='grade_homework')
+@login_required('admin')
 def add_homework():
     """إضافة واجب جديد"""
     homework_type = request.form.get('homework_type')
@@ -24967,7 +24943,7 @@ def add_homework():
     
     return jsonify({'success': True, 'message': f'تم إضافة الواجب لـ {len(student_ids)} طالب'})
 @app.route('/admin/homework/copy_previous', methods=['POST'])
-@login_required('admin', permission='grade_homework')
+@login_required('admin')
 def copy_previous_homework():
     """نسخ واجبات الأمس إلى اليوم"""
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
@@ -24994,7 +24970,7 @@ def copy_previous_homework():
     
     return jsonify({'success': True})
 @app.route('/admin/competitions')
-@login_required('admin', permission='manage_competitions')
+@login_required('admin')
 def competitions():
     """إدارة المسابقات"""
     competitions_list = query_all("""
@@ -25034,7 +25010,7 @@ def competitions():
                                    datetime=datetime,
                                    timedelta=timedelta)
 @app.route('/admin/competitions/add', methods=['POST'])
-@login_required('admin', permission='manage_competitions')
+@login_required('admin')
 def add_competition():
     """إضافة مسابقة جديدة"""
     data = {
@@ -25063,7 +25039,7 @@ def add_competition():
     
     return jsonify({'success': True, 'message': 'تم إضافة المسابقة بنجاح'})
 @app.route('/admin/competitions/toggle/<int:comp_id>', methods=['POST'])
-@login_required('admin', permission='manage_competitions')
+@login_required('admin')
 def toggle_competition(comp_id):
     """تبديل حالة المسابقة، ومكافأة الفائز تلقائياً عند إغلاق المسابقة"""
     comp = get_competition_by_id(comp_id)
@@ -25091,7 +25067,7 @@ def toggle_competition(comp_id):
         return jsonify({'success': True})
     return jsonify({'success': False})
 @app.route('/admin/competitions/toggle_registration/<int:comp_id>', methods=['POST'])
-@login_required('admin', permission='manage_competitions')
+@login_required('admin')
 def toggle_competition_registration(comp_id):
     """تبديل حالة التسجيل في المسابقة"""
     comp = get_competition_by_id(comp_id)
@@ -25100,13 +25076,13 @@ def toggle_competition_registration(comp_id):
         return jsonify({'success': True})
     return jsonify({'success': False})
 @app.route('/admin/competitions/delete/<int:comp_id>', methods=['POST'])
-@login_required('admin', permission='manage_competitions')
+@login_required('admin')
 def delete_competition_route(comp_id):
     """حذف مسابقة"""
     delete_competition(comp_id)
     return jsonify({'success': True})
 @app.route('/admin/competitions/save_grades', methods=['POST'])
-@login_required('admin', permission='manage_competitions')
+@login_required('admin')
 def save_competition_grades():
     """حفظ درجات المسابقات"""
     grades = request.form.get('grades', {})
@@ -25136,13 +25112,13 @@ def save_competition_grades():
     
     return jsonify({'success': True, 'totals': totals})
 @app.route('/admin/competitions/grades/<int:comp_id>')
-@login_required('admin', permission='manage_competitions')
+@login_required('admin')
 def get_competition_grades_json(comp_id):
     """الحصول على درجات مسابقة بصيغة JSON"""
     grades = get_competition_grades(comp_id)
     return jsonify({'success': True, 'grades': [dict(g) for g in grades]})
 @app.route('/admin/messages')
-@login_required('admin', permission='send_messages')
+@login_required('admin')
 def admin_messages():
     """صفحة رسائل المشرف"""
     admin = get_current_user()
@@ -25154,8 +25130,33 @@ def admin_messages():
             (g['id'], admin['id'])
         )
         g['unread'] = g_unread['count'] if g_unread else 0
+        g_last = query_one(
+            "SELECT message, created_at FROM messages WHERE group_id = ? ORDER BY created_at DESC LIMIT 1",
+            (g['id'],)
+        )
+        g['last_message'] = g_last['message'] if g_last else None
+        g['last_time'] = g_last['created_at'] if g_last else None
     contacts = get_user_contacts(admin['id'], user_type='admin')
     unread_count = get_unread_count(admin['id'], 'admin')
+
+    # ===== قائمة موحّدة (مجموعات + محادثات فردية) مرتّبة حسب آخر نشاط، مثل Messenger =====
+    conversations = []
+    for g in groups:
+        conversations.append({
+            'type': 'group', 'id': g['id'], 'name': g['name'], 'color': g.get('color'),
+            'last_message': g['last_message'], 'last_time': g['last_time'], 'unread': g['unread']
+        })
+    for c in contacts:
+        conversations.append({
+            'type': 'user', 'id': c['contact_id'], 'name': c['name'],
+            'last_message': c['last_message'], 'last_time': c['last_time'], 'unread': c['unread'],
+            'is_online': c.get('is_online', False)
+        })
+    with_time = [c for c in conversations if c['last_time']]
+    without_time = [c for c in conversations if not c['last_time']]
+    with_time.sort(key=lambda x: str(x['last_time']), reverse=True)
+    without_time.sort(key=lambda x: x['name'] or '')
+    conversations = with_time + without_time
     
     selected_contact_id = request.args.get('contact', type=int)
     selected_group_id = request.args.get('group', type=int)
@@ -25193,6 +25194,7 @@ def admin_messages():
     return render_template_string(MESSAGES_HTML,
                                    contacts=contacts,
                                    groups=groups,
+                                   conversations=conversations,
                                    messages=messages,
                                    selected_contact=selected_contact,
                                    selected_group=selected_group,
@@ -25205,7 +25207,7 @@ def admin_messages():
                                    students=get_active_students(),
                                    datetime=datetime)
 @app.route('/admin/messages/send', methods=['POST'])
-@login_required('admin', permission='send_messages')
+@login_required('admin')
 def send_admin_message():
     """إرسال رسالة من المشرف"""
     admin = get_current_user()
@@ -25226,7 +25228,7 @@ def send_admin_message():
     
     return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
 @app.route('/admin/messages/send_file', methods=['POST'])
-@login_required('admin', permission='send_messages')
+@login_required('admin')
 def send_admin_file():
     """إرسال ملف من المشرف"""
     admin = get_current_user()
@@ -25248,7 +25250,7 @@ def send_admin_file():
     
     return jsonify({'success': True, 'file_url': file_url})
 @app.route('/admin/messages/create_group', methods=['POST'])
-@login_required('admin', permission='send_messages')
+@login_required('admin')
 def create_message_group():
     """إنشاء مجموعة رسائل جديدة"""
     name = request.form.get('group_name')
@@ -25271,7 +25273,7 @@ def create_message_group():
     
     return jsonify({'success': True, 'group_id': group_id})
 @app.route('/admin/messages/group/add_member', methods=['POST'])
-@login_required('admin', permission='send_messages')
+@login_required('admin')
 def add_group_member():
     """إضافة طالب إلى مجموعة موجودة"""
     data = request.get_json() or request.form
@@ -25298,7 +25300,7 @@ def add_group_member():
     )
     return jsonify({'success': True, 'message': 'تمت إضافة الطالب للمجموعة'})
 @app.route('/admin/messages/group/remove_member', methods=['POST'])
-@login_required('admin', permission='send_messages')
+@login_required('admin')
 def remove_group_member():
     """إزالة طالب من مجموعة"""
     data = request.get_json() or request.form
@@ -25314,7 +25316,7 @@ def remove_group_member():
     )
     return jsonify({'success': True, 'message': 'تمت إزالة الطالب من المجموعة'})
 @app.route('/admin/messages/send_voice', methods=['POST'])
-@login_required('admin', permission='send_messages')
+@login_required('admin')
 def send_admin_voice():
     """إرسال رسالة صوتية من المشرف"""
     admin = get_current_user()
@@ -25338,7 +25340,7 @@ def send_admin_voice():
 
     return jsonify({'success': True, 'file_url': file_url})
 @app.route('/admin/messages/check_new/<type>/<int:id>')
-@login_required('admin', permission='send_messages')
+@login_required('admin')
 def check_new_admin_messages(type, id):
     """التحقق من الرسائل الجديدة للمشرف"""
     admin_id = session['user_id']
@@ -25362,25 +25364,25 @@ def check_new_admin_messages(type, id):
         'new_messages': [dict(m) for m in messages]
     })
 @app.route('/admin/messages/mark_read/<int:message_id>', methods=['POST'])
-@login_required('admin', permission='send_messages')
+@login_required('admin')
 def mark_admin_message_read(message_id):
     """تحديد رسالة كمقروءة للمشرف"""
     mark_message_as_read(message_id)
     return jsonify({'success': True})
 @app.route('/admin/messages/mark_all_read', methods=['POST'])
-@login_required('admin', permission='send_messages')
+@login_required('admin')
 def mark_all_admin_messages_read():
     """تحديد جميع رسائل المشرف كمقروءة"""
     mark_all_messages_read(session['user_id'], 'admin')
     return jsonify({'success': True})
 @app.route('/admin/messages/unread_count')
-@login_required('admin', permission='send_messages')
+@login_required('admin')
 def admin_unread_count():
     """عدد الرسائل غير المقروءة للمشرف"""
     count = get_unread_count(session['user_id'], 'admin')
     return jsonify({'count': count})
 @app.route('/admin/messages/clear_chat', methods=['POST'])
-@login_required('admin', permission='send_messages')
+@login_required('admin')
 def clear_admin_chat():
     """مسح محادثة المشرف"""
     data = request.get_json()
@@ -25404,7 +25406,7 @@ def clear_admin_chat():
 
 
 @app.route('/admin/student/<int:student_id>')
-@login_required(role='admin', permission='view_students')
+@login_required(role='admin')
 def admin_view_student(student_id):
     """عرض ملف طالب من قبل المشرف"""
     student = get_student_by_id(student_id)
@@ -25449,7 +25451,7 @@ def admin_view_student(student_id):
                                    datetime=datetime)
 
 @app.route('/admin/analytics')
-@login_required('admin', permission='view_analytics')
+@login_required('admin')
 def admin_analytics():
     """صفحة التحليلات"""
     students_count = query_one("SELECT COUNT(*) as count FROM students")['count']
@@ -25520,7 +25522,7 @@ def admin_analytics():
                                    new_students_month=5,
                                    datetime=datetime)
 @app.route('/admin/profile')
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def admin_profile():
     """ملف المشرف"""
     admin = get_current_user()
@@ -25533,7 +25535,7 @@ def admin_profile():
                                    last_active='اليوم',
                                    datetime=datetime)
 @app.route('/admin/profile/update', methods=['POST'])
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def update_admin_profile():
     """تحديث ملف المشرف"""
     admin = get_current_user()
@@ -25556,7 +25558,7 @@ def update_admin_profile():
     
     return jsonify({'success': True, 'message': 'تم تحديث الملف بنجاح'})
 @app.route('/admin/assistants')
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def admin_assistants():
     """إدارة مساعدي المشرف"""
     assistants_list = get_assistants()
@@ -25594,7 +25596,7 @@ def admin_assistants():
                                    today=today,
                                    datetime=datetime)
 @app.route('/admin/assistants/add', methods=['POST'])
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def add_assistant():
     """منح صلاحيات مساعد لطالب"""
     student_id = request.form.get('student_id')
@@ -25615,7 +25617,7 @@ def add_assistant():
     grant_assistant(student_id, ','.join(permissions), xp_due_date)
     return jsonify({'success': True, 'message': 'تم منح الصلاحيات بنجاح'})
 @app.route('/admin/assistants/update_permissions/<int:assistant_id>', methods=['POST'])
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def update_assistant_permissions_route(assistant_id):
     """تعديل صلاحيات مساعد موجود"""
     permissions = request.form.getlist('permissions')
@@ -25625,13 +25627,13 @@ def update_assistant_permissions_route(assistant_id):
     update_assistant_permissions(assistant_id, ','.join(permissions))
     return jsonify({'success': True, 'message': 'تم تحديث الصلاحيات بنجاح'})
 @app.route('/admin/assistants/revoke/<int:assistant_id>', methods=['POST'])
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def revoke_assistant_route(assistant_id):
     """سحب صلاحيات مساعد"""
     revoke_assistant(assistant_id)
     return jsonify({'success': True, 'message': 'تم سحب الصلاحيات'})
 @app.route('/admin/assistants/grant_xp/<int:assistant_id>', methods=['POST'])
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def grant_assistant_xp_route(assistant_id):
     """منح نقاط XP لمساعد"""
     data = request.get_json()
@@ -25644,7 +25646,7 @@ def grant_assistant_xp_route(assistant_id):
     grant_assistant_xp(assistant['student_id'], amount)
     return jsonify({'success': True, 'amount': amount})
 @app.route('/admin/assistants/reset_xp_due_date/<int:assistant_id>', methods=['POST'])
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def reset_assistant_xp_due_date(assistant_id):
     """تحديث تاريخ استحقاق XP للمساعد"""
     next_month = (datetime.now() + timedelta(days=30)).strftime('%Y-%m-%d')
@@ -25654,7 +25656,7 @@ def reset_assistant_xp_due_date(assistant_id):
     )
     return jsonify({'success': True, 'message': 'تم تجديد المنحة للشهر القادم'})
 @app.route('/admin/duels')
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def admin_duels():
     """إدارة التحديات الفردية"""
     duels = query_all("""
@@ -25671,7 +25673,7 @@ def admin_duels():
     
     return render_template_string(ADMIN_DUELS_HTML, duels=duels, datetime=datetime)
 @app.route('/admin/duels/action', methods=['POST'])
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def duel_action():
     """تنفيذ إجراء على تحدي"""
     duel_id = request.form.get('duel_id')
@@ -25690,7 +25692,7 @@ def duel_action():
     
     return jsonify({'success': True})
 @app.route('/admin/store')
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def admin_store():
     """متجر المشرف"""
     books = get_all_books(active_only=False)
@@ -25710,7 +25712,7 @@ def admin_store():
                                    stats=stats,
                                    datetime=datetime)
 @app.route('/admin/store/add_book', methods=['POST'])
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def add_admin_book():
     """إضافة كتاب في المتجر"""
     title = request.form.get('title')
@@ -25750,7 +25752,7 @@ def add_admin_book():
     create_book(book_data)
     return jsonify({'success': True, 'message': 'تم إضافة الكتاب بنجاح'})
 @app.route('/admin/store/toggle_book/<int:book_id>', methods=['POST'])
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def toggle_book_route(book_id):
     """تبديل حالة الكتاب"""
     book = get_book_by_id(book_id)
@@ -25759,13 +25761,13 @@ def toggle_book_route(book_id):
         return jsonify({'success': True})
     return jsonify({'success': False})
 @app.route('/admin/store/delete_book/<int:book_id>', methods=['POST'])
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def delete_book_route(book_id):
     """حذف كتاب"""
     delete_book(book_id)
     return jsonify({'success': True})
 @app.route('/admin/store/approve_offer', methods=['POST'])
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def approve_book_offer():
     """الموافقة على عرض بيع كتاب"""
     offer_id = request.form.get('offer_id')
@@ -25779,7 +25781,7 @@ def approve_book_offer():
         return jsonify({'success': True, 'message': 'تمت الموافقة على العرض'})
     return jsonify({'success': False})
 @app.route('/admin/store/reject_offer', methods=['POST'])
-@login_required('admin', permission='__ADMIN_ONLY__')
+@login_required('admin')
 def reject_book_offer():
     """رفض عرض بيع كتاب"""
     offer_id = request.form.get('offer_id')
@@ -26338,12 +26340,44 @@ def student_messages():
     # تحديث عدد الرسائل غير المقروءة
     unread_count = get_unread_count(student['id'], 'student')
 
+    # ===== قائمة موحّدة (المشرف + المجموعات + المحادثات الفردية) مرتّبة حسب آخر نشاط، مثل Messenger =====
+    conversations = []
+    if admin_contact:
+        conversations.append({
+            'type': 'admin', 'id': admin_contact['contact_id'], 'name': admin_contact['name'],
+            'last_message': admin_contact['last_message'], 'last_time': admin_contact['last_time'],
+            'unread': admin_contact['unread']
+        })
+    for g in groups:
+        g_last = query_one(
+            "SELECT message, created_at FROM messages WHERE group_id = ? ORDER BY created_at DESC LIMIT 1",
+            (g['id'],)
+        )
+        conversations.append({
+            'type': 'group', 'id': g['id'], 'name': g['name'], 'color': g.get('color'),
+            'last_message': g_last['message'] if g_last else None,
+            'last_time': g_last['created_at'] if g_last else None,
+            'unread': g['unread']
+        })
+    for c in contacts:
+        conversations.append({
+            'type': 'user', 'id': c['contact_id'], 'name': c['name'],
+            'last_message': c['last_message'], 'last_time': c['last_time'], 'unread': c['unread'],
+            'is_online': c.get('is_online', False)
+        })
+    with_time = [c for c in conversations if c['last_time']]
+    without_time = [c for c in conversations if not c['last_time']]
+    with_time.sort(key=lambda x: str(x['last_time']), reverse=True)
+    without_time.sort(key=lambda x: x['name'] or '')
+    conversations = with_time + without_time
+
     return render_template_string(STUDENT_MESSAGES_HTML,
                                    student=student,
                                    student_id=student['id'],
                                    contacts=contacts,
                                    admin_contact=admin_contact,
                                    groups=groups,
+                                   conversations=conversations,
                                    messages=messages,
                                    selected_contact=selected_contact,
                                    selected_group=selected_group,
@@ -26488,6 +26522,7 @@ def student_store():
                                    my_offers=my_offers,
                                    store_colors=STORE_COLORS,
                                    owned_color_ids=owned_color_ids,
+                                   gradient_price=GRADIENT_PRICE,
                                    datetime=datetime)
 @app.route('/student/store/buy/<int:book_id>', methods=['POST'])
 @login_required('student')
@@ -26514,6 +26549,36 @@ def activate_color_route(color_id):
     if ok:
         return jsonify({'success': True, 'message': 'تم تفعيل اللون'})
     return jsonify({'success': False, 'message': 'هذا اللون غير مملوك'})
+@app.route('/student/store/buy_gradient', methods=['POST'])
+@login_required('student')
+def buy_gradient_route():
+    """شراء/تفعيل تدرج بين لونين مملوكين"""
+    student = get_current_user()
+    color1 = request.form.get('color1', '')
+    color2 = request.form.get('color2', '')
+    ok, message = buy_theme_gradient(student['id'], color1, color2)
+    return jsonify({'success': ok, 'message': message})
+@app.route('/student/profile/encrypt_info', methods=['POST'])
+@login_required('student')
+def encrypt_info_route():
+    """تشفير معلوماتي في لوحة الصدارة (2000 نقطة)"""
+    student = get_current_user()
+    ok, message = encrypt_my_info(student['id'])
+    return jsonify({'success': ok, 'message': message})
+@app.route('/student/profile/decrypt_info', methods=['POST'])
+@login_required('student')
+def decrypt_info_route():
+    """إظهار معلوماتي من جديد (مجاني)"""
+    student = get_current_user()
+    ok, message = decrypt_my_info(student['id'])
+    return jsonify({'success': ok, 'message': message})
+@app.route('/leaderboard/unlock/<int:target_id>', methods=['POST'])
+@login_required('student')
+def unlock_student_route(target_id):
+    """فك تشفير معلومات طالب آخر لمدة 24 ساعة (1000 نقطة)"""
+    student = get_current_user()
+    ok, message = unlock_student_info(student['id'], target_id)
+    return jsonify({'success': ok, 'message': message})
 @app.route('/student/store/sell', methods=['POST'])
 @login_required('student')
 def sell_book_route():
@@ -26588,7 +26653,7 @@ def create_duel_route():
 def leaderboard():
     """لوحة الصدارة"""
     top_students = query_all("""
-        SELECT id, name, points, rank, status
+        SELECT id, name, points, rank, status, theme_color, info_encrypted
         FROM students
         WHERE status = 'active'
         ORDER BY points DESC
@@ -26597,11 +26662,22 @@ def leaderboard():
     
     # إضافة بيانات إضافية
     top_students = [dict(student) for student in top_students]
+
+    viewer = get_current_user() if session.get('role') == 'student' else None
+    viewer_id = viewer['id'] if viewer else None
+    unlocked_ids = get_unlocked_target_ids(viewer_id)
+
     for student in top_students:
-        student['badges'] = get_student_badges(student['id'])
+        is_self = viewer_id is not None and student['id'] == viewer_id
+        student['is_locked'] = bool(student.get('info_encrypted')) and not is_self and student['id'] not in unlocked_ids
+        if student['is_locked']:
+            student['badges'] = []
+        else:
+            student['badges'] = get_student_badges(student['id'])
     
     return render_template_string(LEADERBOARD_HTML,
                                    top_students=top_students,
+                                   viewer_id=viewer_id,
                                    datetime=datetime)
 @app.route('/static/uploads/<path:filename>')
 def serve_upload(filename):
@@ -26651,11 +26727,23 @@ def add_missing_columns():
 add_missing_columns()
 
 def add_theme_color_column():
-    """إضافة عمود لون الواجهة المشتراة من متجر الألوان (يعمل دائماً بغض النظر عن حالة الأعمدة الأخرى)"""
+    """إضافة أعمدة متجر الألوان وميزة تشفير المعلومات (تعمل دائماً بغض النظر عن حالة الأعمدة الأخرى)"""
     try:
         execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS theme_color VARCHAR(20)")
         execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS owned_theme_colors TEXT")
-        print("✅ تم التأكد من وجود أعمدة متجر الألوان")
+        execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS owned_theme_gradients TEXT")
+        execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS info_encrypted INTEGER DEFAULT 0")
+        execute_query("""
+            CREATE TABLE IF NOT EXISTS student_unlocks (
+                id SERIAL PRIMARY KEY,
+                viewer_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                target_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+                expires_at TIMESTAMP NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE(viewer_id, target_id)
+            )
+        """)
+        print("✅ تم التأكد من وجود أعمدة متجر الألوان وتشفير المعلومات")
     except Exception as e:
         print(f"⚠️ خطأ أثناء إضافة أعمدة متجر الألوان: {e}")
 
