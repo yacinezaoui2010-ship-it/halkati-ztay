@@ -872,7 +872,8 @@ def submit_student_surah_selection(student_id, selected_surah_numbers):
             # فرق عن الحالة المؤكدة => يحتاج مصادقة المشرف
             execute_query(
                 "INSERT INTO student_surah_pending (student_id, surah_number, memorized) VALUES (?, ?, ?) "
-                "ON CONFLICT (student_id, surah_number) DO UPDATE SET memorized = EXCLUDED.memorized, requested_at = CURRENT_TIMESTAMP",
+                "ON CONFLICT (student_id, surah_number) DO UPDATE SET memorized = EXCLUDED.memorized, requested_at = CURRENT_TIMESTAMP "
+                "RETURNING student_id",
                 (student_id, surah_number, 1 if is_selected else 0)
             )
 
@@ -1602,12 +1603,12 @@ def update_competition_grade(student_id, comp_id, grade, notes=None):
     )
     if existing:
         execute_query(
-            "UPDATE competition_grades SET grade = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
-            (grade, notes, existing['id'])
+            "UPDATE competition_grades SET grade = ?, notes = ?, updated_at = CURRENT_TIMESTAMP WHERE student_id = ? AND competition_id = ?",
+            (grade, notes, student_id, comp_id)
         )
     else:
         execute_query(
-            "INSERT INTO competition_grades (student_id, competition_id, grade, notes) VALUES (?, ?, ?, ?)",
+            "INSERT INTO competition_grades (student_id, competition_id, grade, notes) VALUES (?, ?, ?, ?) RETURNING student_id",
             (student_id, comp_id, grade, notes)
         )
 def register_student_for_competition(student_id, comp_id):
@@ -1631,7 +1632,7 @@ def register_student_for_competition(student_id, comp_id):
     
     # إضافة التسجيل
     execute_query(
-        "INSERT INTO competition_grades (student_id, competition_id, grade) VALUES (?, ?, 0)",
+        "INSERT INTO competition_grades (student_id, competition_id, grade) VALUES (?, ?, 0) RETURNING student_id",
         (student_id, comp_id)
     )
     return True
@@ -26459,7 +26460,7 @@ def add_competition():
     if participants and data['is_open'] == 0:
         for student_id in participants:
             execute_query(
-                "INSERT INTO competition_grades (student_id, competition_id, grade) VALUES (?, ?, 0)",
+                "INSERT INTO competition_grades (student_id, competition_id, grade) VALUES (?, ?, 0) RETURNING student_id",
                 (student_id, comp_id)
             )
     
@@ -26486,7 +26487,7 @@ def toggle_competition(comp_id):
                     )
                     if not already:
                         execute_query(
-                            "INSERT INTO student_badges (student_id, badge_id) VALUES (?, ?)",
+                            "INSERT INTO student_badges (student_id, badge_id) VALUES (?, ?) RETURNING student_id",
                             (winner['student_id'], winner_badge['id'])
                         )
                 execute_query("UPDATE competitions SET rewarded = 1 WHERE id = ?", (comp_id,))
