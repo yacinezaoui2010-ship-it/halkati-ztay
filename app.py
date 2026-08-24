@@ -26970,7 +26970,10 @@ def student_competitions():
     for comp in competitions_list:
         comp['participated'] = 1 if comp.get('my_grade') is not None else 0
         comp['won'] = 1 if comp.get('my_rank') == 1 else 0
-        comp['completed'] = 1 if comp['date'] < get_today() else 0
+        today = get_today()
+        if isinstance(today, str):
+            today = datetime.strptime(today, '%Y-%m-%d').date()
+        comp['completed'] = 1 if comp['date'] < today else 0
     
     return render_template_string(STUDENT_COMPETITIONS_HTML,
                                    student=student,
@@ -27749,6 +27752,22 @@ def add_missing_columns():
 
 # 6. نشغل الدالة عند بدء التطبيق
 add_missing_columns()
+
+@app.route('/student/evaluation')
+@login_required('student')
+def student_evaluation():
+    """تقييم الطالب"""
+    student = get_current_user()
+    return render_template_string(STUDENT_EVALUATION_HTML, student=student, today=get_today(), datetime=datetime)
+
+@app.route('/student/attendance')
+@login_required('student')
+def student_attendance():
+    """حضور الطالب"""
+    student = get_current_user()
+    records = query_all("SELECT * FROM attendance WHERE student_id = %s ORDER BY date DESC LIMIT 30", (student['id'],))
+    return render_template_string(STUDENT_ATTENDANCE_HTML, student=student, records=records, today=get_today(), datetime=datetime)
+
 
 def add_theme_color_column():
     """إضافة أعمدة متجر الألوان وميزة تشفير المعلومات (تعمل دائماً بغض النظر عن حالة الأعمدة الأخرى)"""
