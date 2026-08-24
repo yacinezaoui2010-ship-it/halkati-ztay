@@ -4781,82 +4781,6 @@ console.log('🔒 الأمان: Brute Force Protection, 2FA Ready, Secure Sessio
 </body>
 </html>
 '''
-
-ADMIN_STORE_HTML = r'''
-<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-    <meta charset="UTF-8">
-    <title>متجر الألوان - المسؤول</title>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { font-family: 'Tajawal', sans-serif; background: #0d1a3f; min-height: 100vh; color: #fff; }
-        .container { max-width: 1200px; margin: 0 auto; padding: 30px 20px; }
-        .header { text-align: center; margin-bottom: 40px; }
-        .header h1 { font-size: 2.5rem; margin-bottom: 10px; }
-        .colors-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 20px; }
-        .color-card { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); border-radius: 16px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.3s; }
-        .color-card:hover { transform: translateY(-5px); border-color: #c9a227; }
-        .color-card.owned { border-color: #4ade80; }
-        .color-card.active { border: 2px solid #c9a227; }
-        .color-preview { width: 80px; height: 80px; border-radius: 50%; margin: 0 auto 15px; }
-        .btn { margin-top: 12px; padding: 8px 20px; border-radius: 10px; border: none; font-family: 'Tajawal'; font-weight: 700; cursor: pointer; }
-        .btn-buy { background: #c9a227; color: #000; }
-        .btn-active { background: #4ade80; color: #000; }
-        .btn-owned { background: rgba(255,255,255,0.1); color: #fff; }
-        .owned-badge { position: absolute; top: 10px; left: 10px; background: #4ade80; color: #000; font-size: 0.7rem; padding: 3px 8px; border-radius: 8px; }
-        .grad-color { width: 50px; height: 50px; border-radius: 12px; cursor: pointer; border: 3px solid transparent; display: inline-block; margin: 5px; }
-        .grad-color.selected { border-color: #c9a227; }
-        .section-title { font-size: 1.5rem; margin: 30px 0 20px; padding-right: 10px; border-right: 4px solid #c9a227; }
-        .back-link { color: #c9a227; text-decoration: none; display: inline-block; margin-bottom: 20px; }
-        .toast { position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); border: 1px solid #c9a227; padding: 15px 30px; border-radius: 12px; display: none; z-index: 9999; }
-    </style>
-</head>
-<body>
-    {{ theme_style(admin)|safe }}
-    <div class="container">
-        <a href="/admin/dashboard" class="back-link">← العودة للوحة التحكم</a>
-        <div class="header"><h1>🎨 متجر الألوان</h1><p>خصص مظهر لوحة التحكم</p></div>
-        <h2 class="section-title">الألوان المتاحة</h2>
-        <div class="colors-grid">
-            {% for color in store_colors %}
-            {% set is_owned = color.id in owned_colors %}
-            {% set is_active = active_color == color.hex %}
-            <div class="color-card {% if is_owned %}owned{% endif %} {% if is_active %}active{% endif %}" style="position:relative;" onclick="handleColor('{{ color.id }}', {{ is_owned|tojson }}, {{ is_active|tojson }})">
-                {% if is_owned %}<span class="owned-badge">مملوك</span>{% endif %}
-                <div class="color-preview" style="background: {{ color.hex }};"></div>
-                <div style="font-weight:700;">{{ color.name }}</div>
-                <button class="btn {% if is_active %}btn-active{% elif is_owned %}btn-owned{% else %}btn-buy{% endif %}">
-                    {% if is_active %}مفعّل{% elif is_owned %}تفعيل{% else %}مجاني{% endif %}
-                </button>
-            </div>
-            {% endfor %}
-        </div>
-        <h2 class="section-title">🌈 دمج ألوان (تدرج)</h2>
-        <div style="background: rgba(255,255,255,0.06); border-radius: 20px; padding: 30px; margin-top: 20px;">
-            <p style="color: rgba(255,255,255,0.7); margin-bottom: 15px;">اختر لونين أو أكثر من ألوانك المملوكة:</p>
-            <div id="grad-container">
-                {% for color in store_colors %}{% if color.id in owned_colors %}
-                <div class="grad-color" style="background: {{ color.hex }};" data-id="{{ color.id }}" data-hex="{{ color.hex }}" onclick="toggleGrad(this)"></div>
-                {% endif %}{% endfor %}
-            </div>
-            <div id="grad-preview" style="height: 100px; border-radius: 16px; margin: 20px 0; background: linear-gradient(135deg, #333, #555);"></div>
-            <button class="btn btn-buy" onclick="buyGrad()">شراء التدرج</button>
-        </div>
-    </div>
-    <div class="toast" id="toast"></div>
-    <script>
-        function showToast(m) { const t = document.getElementById('toast'); t.textContent = m; t.style.display = 'block'; setTimeout(() => t.style.display = 'none', 3000); }
-        function handleColor(id, owned, active) { if (active) return; const url = owned ? '/admin/store/activate_color/' + id : '/admin/store/buy_color/' + id; fetch(url, {method: 'POST'}).then(r => r.json()).then(d => { showToast(d.message); if (d.success) location.reload(); }); }
-        let selected = [];
-        function toggleGrad(el) { const id = el.dataset.id; if (el.classList.contains('selected')) { el.classList.remove('selected'); selected = selected.filter(x => x !== id); } else { el.classList.add('selected'); selected.push(id); } updatePreview(); }
-        function updatePreview() { const els = document.querySelectorAll('.grad-color.selected'); if (els.length < 2) return; const hexes = Array.from(els).map(e => e.dataset.hex); document.getElementById('grad-preview').style.background = 'linear-gradient(135deg, ' + hexes.join(', ') + ')'; }
-        function buyGrad() { if (selected.length < 2) { showToast('اختر لونين على الأقل'); return; } const f = new FormData(); selected.forEach(id => f.append('color_ids[]', id)); fetch('/admin/store/buy_gradient', {method: 'POST', body: f}).then(r => r.json()).then(d => { showToast(d.message); if (d.success) location.reload(); }); }
-    </script>
-</body>
-</html>
-'''
 # ============================================================ #
 # ====== الصفحة 6: دخول الطالب (STUDENT_LOGIN) ================ #
 # ============================================================ #
@@ -5876,7 +5800,6 @@ ADMIN_DASHBOARD_HTML = r'''
         <a href="{{ url_for('admin_assistants') }}">🧑‍🤝‍🧑 مساعدين</a>
         <a href="{{ url_for('admin_duels') }}">⚔️ تحديات</a>
         <a href="{{ url_for('admin_store') }}">🛍️ متجر</a>
-        <a href="/admin/store">🎨 متجر الألوان</a>
     </div>
     <div class="stats-grid">
         <div class="stat-card" onclick="location.href='{{ url_for('manage_students') }}'"><div class="icon">👨‍🎓</div><div class="number">{{ students_count }}</div><div class="label">إجمالي الطلاب</div><div class="change up">↑ +{{ new_students_today|default(0, true) }} اليوم</div><div class="trend-line"></div></div>
@@ -25690,11 +25613,26 @@ def student_assistant():
     # تاريخ XP
     xp_history = []
 
+    # تسميات الصلاحيات
+    perm_labels = {
+        'view_all': 'عرض الكل',
+        'manage_students': 'إدارة الطلاب',
+        'manage_evaluation': 'إدارة التقييم',
+        'manage_competitions': 'إدارة المسابقات',
+        'manage_attendance': 'إدارة الحضور',
+        'manage_homework': 'إدارة الواجبات',
+        'manage_memorization': 'إدارة التسميع',
+        'manage_payments': 'إدارة المدفوعات',
+        'manage_store': 'إدارة المتجر',
+        'send_notifications': 'إرسال الإشعارات',
+    }
+
     return render_template_string(
         ASSISTANT_DASHBOARD_HTML,
         student=student,
         assistant_info=assistant_info,
         perms=perms,
+        perm_labels=perm_labels,
         tasks=tasks,
         stats=stats,
         active_competitions=active_competitions,
