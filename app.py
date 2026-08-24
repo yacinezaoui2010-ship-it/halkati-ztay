@@ -25558,9 +25558,44 @@ def admin_session_history():
 @app.route('/student/assistant')
 @login_required('student')
 def student_assistant():
-    """لوحة المساعد (قيد التطوير)"""
-    flash('هذه الميزة قيد التطوير حالياً', 'info')
-    return redirect(url_for('student_dashboard'))
+    """لوحة المساعد — للطلاب الذين لديهم صلاحية مساعد"""
+    student = get_current_user()
+    student_id = student['id']
+
+    # التحقق من أن الطالب مساعد فعلاً
+    assistant = query_one(
+        "SELECT * FROM assistants WHERE student_id = %s AND active = 1",
+        (student_id,)
+    )
+
+    if not assistant:
+        flash('ليس لديك صلاحية الوصول كمساعد', 'danger')
+        return redirect(url_for('student_dashboard'))
+
+    # جلب الإجراءات
+    actions = query_all(
+        "SELECT * FROM assistant_actions WHERE assistant_id = %s ORDER BY created_at DESC LIMIT 50",
+        (assistant['id'],)
+    )
+
+    # XP
+    xp_points = assistant.get('xp_points', 0)
+    xp_due = assistant.get('xp_due_date')
+    xp_due_str = xp_due.strftime('%Y-%m-%d') if xp_due and hasattr(xp_due, 'strftime') else ''
+    last_xp = assistant.get('last_xp_granted')
+    last_xp_str = last_xp.strftime('%Y-%m-%d %H:%M:%S') if last_xp and hasattr(last_xp, 'strftime') else ''
+
+    return render_template_string(
+        ASSISTANT_DASHBOARD_HTML,
+        student=student,
+        assistant=assistant,
+        actions=actions,
+        xp_points=xp_points,
+        xp_due_date=xp_due_str,
+        last_xp_granted=last_xp_str,
+        today=get_today(),
+        datetime=datetime
+    )
 @app.route('/logout')
 def logout():
     """تسجيل الخروج"""
