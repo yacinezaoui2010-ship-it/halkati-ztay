@@ -34,28 +34,39 @@ def shade_hex(hex_color, factor):
     except Exception:
         return hex_color
 
-def build_theme_style(student):
-    """يبني كتلة CSS كاملة (:root overrides) بناءً على لون/تدرج الطالب المفعّل،
+def build_theme_style(user):
+    """يبني كتلة CSS كاملة (:root overrides + body background) بناءً على لون/تدرج المستخدم المفعّل،
     بالإضافة إلى تجاوزات الوضع الفاتح (إن كان مفعّلاً) وزر تبديل الوضع العائم"""
-    if not student:
+    if not user:
         return ''
     css_parts = []
-    tc = student.get('theme_color') if hasattr(student, 'get') else None
+    body_bg_dark = ''
+    body_bg_light = ''
+    tc = user.get('theme_color') if hasattr(user, 'get') else None
     if tc:
         if tc.startswith('grad:'):
             try:
-                c1, c2 = tc[5:].split(',')
-                gold, gold_light = c1, c2
-                primary = f'linear-gradient(135deg, {shade_hex(c1, 0.5)}, {shade_hex(c2, 0.5)})'
-                primary_light = f'linear-gradient(135deg, {shade_hex(c1, 0.7)}, {shade_hex(c2, 0.7)})'
-                primary_dark = f'linear-gradient(135deg, {shade_hex(c1, 0.22)}, {shade_hex(c2, 0.22)})'
-                gold_glow = c1 + '26'
-                css_parts.append(
-                    ':root{'
-                    f'--gold:{gold} !important;--gold-light:{gold_light} !important;--gold-glow:{gold_glow} !important;'
-                    f'--primary:{primary} !important;--primary-light:{primary_light} !important;--primary-dark:{primary_dark} !important;'
-                    '}'
-                )
+                hexes = tc[5:].split(',')
+                if len(hexes) >= 2:
+                    gold = hexes[0]
+                    gold_light = hexes[-1]
+                    primary_stops = ', '.join([shade_hex(h, 0.5) for h in hexes])
+                    primary = f'linear-gradient(135deg, {primary_stops})'
+                    primary_light_stops = ', '.join([shade_hex(h, 0.7) for h in hexes])
+                    primary_light = f'linear-gradient(135deg, {primary_light_stops})'
+                    primary_dark_stops = ', '.join([shade_hex(h, 0.22) for h in hexes])
+                    primary_dark = f'linear-gradient(135deg, {primary_dark_stops})'
+                    gold_glow = hexes[0] + '26'
+                    bg_stops_dark = ', '.join([f'{h}18' for h in hexes])
+                    bg_stops_light = ', '.join([f'{h}10' for h in hexes])
+                    body_bg_dark = f'linear-gradient(135deg, {bg_stops_dark}), #0d1a3f'
+                    body_bg_light = f'linear-gradient(135deg, {bg_stops_light}), #eef2f4'
+                    css_parts.append(
+                        ':root{'
+                        f'--gold:{gold} !important;--gold-light:{gold_light} !important;--gold-glow:{gold_glow} !important;'
+                        f'--primary:{primary} !important;--primary-light:{primary_light} !important;--primary-dark:{primary_dark} !important;'
+                        '}'
+                    )
             except Exception:
                 pass
         else:
@@ -65,17 +76,20 @@ def build_theme_style(student):
             primary_light = shade_hex(tc, 0.65)
             primary_dark = shade_hex(tc, 0.22)
             gold_glow = tc + '26'
+            body_bg_dark = f'linear-gradient(135deg, {tc}18, {tc}08), #0d1a3f'
+            body_bg_light = f'linear-gradient(135deg, {tc}10, {tc}06), #eef2f4'
             css_parts.append(
                 ':root{'
                 f'--gold:{gold} !important;--gold-light:{gold_light} !important;--gold-glow:{gold_glow} !important;'
                 f'--primary:{primary} !important;--primary-light:{primary_light} !important;--primary-dark:{primary_dark} !important;'
                 '}'
             )
+        # خلفية الوضع المظلم
+        css_parts.append(f'body{{background:{body_bg_dark} !important;background-attachment:fixed !important;}}')
 
-    mode = (student.get('theme_mode') if hasattr(student, 'get') else None) or 'dark'
+    mode = (user.get('theme_mode') if hasattr(user, 'get') else None) or 'dark'
     toggle_html = ''
     if mode == 'light':
-        # تجاوز متغيرات الخلفية/النص المشتركة بين كل الصفحات لتفعيل الوضع النهاري
         css_parts.append(
             ':root{'
             '--primary-dark:#eef2f4 !important;--text-primary:#132229 !important;'
@@ -83,9 +97,16 @@ def build_theme_style(student):
             '--glass:rgba(19,34,41,0.045) !important;--glass-border:rgba(19,34,41,0.12) !important;'
             '}'
         )
+        # خلفية الوضع النهاري باللون المشترى
+        if body_bg_light:
+            css_parts.append(f'body{{background:{body_bg_light} !important;background-attachment:fixed !important;}}')
+        elif body_bg_dark:
+            css_parts.append(f'body{{background:{body_bg_dark.replace("#0d1a3f", "#eef2f4")} !important;background-attachment:fixed !important;}}')
     toggle_icon = '☀️' if mode == 'light' else '🌙'
+    role = user.get('role', 'student') if hasattr(user, 'get') else 'student'
+    toggle_action = '/admin/toggle_theme_mode' if role == 'admin' else '/student/toggle_theme_mode'
     toggle_html = (
-        '<form method="POST" action="/student/toggle_theme_mode" '
+        f'<form method="POST" action="{toggle_action}" '
         'style="position:fixed;top:10px;left:60px;z-index:9999;">'
         f'<button type="submit" title="تبديل الوضع الفاتح/الداكن" '
         'style="width:36px;height:36px;border-radius:10px;border:1px solid rgba(255,255,255,0.2);'
@@ -16678,1042 +16699,207 @@ ASSISTANT_DASHBOARD_HTML = r'''
     <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لوحة المساعد - حلقتي زتاي</title>
+    <title>لوحة المساعد - {{ assistant_info.name }}</title>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
     <style>
-        /* ==========================================
-                   SECTION 1: المتغيرات الأساسية
-                   ========================================== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
-        
         :root {
-            --primary: #1a2a6c;
-            --primary-light: #2a4a9c;
-            --primary-dark: #0d1a3f;
-            --gold: #c9a227;
-            --gold-light: #e8c84a;
-            --gold-glow: rgba(201,162,39,0.15);
-            --glass: rgba(255,255,255,0.06);
-            --glass-border: rgba(255,255,255,0.10);
-            --text-primary: #ffffff;
-            --text-secondary: rgba(255,255,255,0.7);
-            --text-muted: rgba(255,255,255,0.35);
-            --shadow: 0 8px 32px rgba(0,0,0,0.3);
-            --success: #4ade80;
-            --danger: #f87171;
-            --warning: #fbbf24;
-            --info: #60a5fa;
-            --xp-gold: #ffd700;
-            --xp-purple: #a855f7;
+            --primary: #1a2a6c; --primary-light: #2a4a9c; --primary-dark: #0d1a3f;
+            --gold: #c9a227; --gold-light: #e8c84a; --gold-glow: rgba(201,162,39,0.15);
+            --glass: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.10);
+            --text-primary: #ffffff; --text-secondary: rgba(255,255,255,0.7); --text-muted: rgba(255,255,255,0.35);
+            --shadow: 0 8px 32px rgba(0,0,0,0.3); --success: #4ade80; --danger: #f87171;
+            --warning: #fbbf24; --info: #60a5fa; --xp-gold: #ffd700; --xp-purple: #a855f7;
         }
-
-        /* ==========================================
-                   SECTION 2: الأساسيات
-                   ========================================== */
         body {
-            font-family: 'Tajawal', sans-serif;
-            background: var(--primary-dark);
-            min-height: 100vh;
-            color: var(--text-primary);
-            overflow-x: hidden;
+            font-family: 'Tajawal', sans-serif; background: var(--primary-dark);
+            min-height: 100vh; color: var(--text-primary); overflow-x: hidden;
         }
-
-        .bg-layer {
-            position: fixed;
-            inset: 0;
-            z-index: 0;
-            pointer-events: none;
-            background:
-                radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 16px 20px 30px;
-            position: relative;
-            z-index: 1;
-        }
-
-        /* ==========================================
-                   SECTION 3: الأزرار
-                   ========================================== */
-        .btn {
-            padding: 7px 16px;
-            border: none;
-            border-radius: 8px;
-            font-weight: 600;
-            font-size: 13px;
-            cursor: pointer;
-            transition: all 0.3s ease;
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 6px;
-            font-family: inherit;
-        }
-        .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
-        }
-        .btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none !important;
-        }
-
-        .btn-primary { background: var(--primary-light); color: #fff; }
-        .btn-gold { background: linear-gradient(135deg, var(--gold), var(--gold-light)); color: #1a1a1a; }
-        .btn-outline { background: transparent; border: 1.5px solid var(--glass-border); color: var(--text-secondary); }
-        .btn-outline:hover { border-color: var(--gold); color: #fff; }
-        .btn-success { background: var(--success); color: #1a1a1a; }
-        .btn-danger { background: var(--danger); color: #fff; }
-        .btn-warning { background: var(--warning); color: #1a1a1a; }
-        .btn-info { background: var(--info); color: #1a1a1a; }
-
-        .btn-sm { padding: 4px 12px; font-size: 12px; }
-        .btn-xs { padding: 2px 10px; font-size: 11px; }
-
-        /* ==========================================
-                   SECTION 4: الهيدر
-                   ========================================== */
+        .container { max-width: 1100px; margin: 0 auto; padding: 30px 20px; }
         .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 12px;
-            padding: 14px 22px;
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 14px;
-            margin-bottom: 16px;
+            background: var(--glass); border: 1px solid var(--glass-border);
+            border-radius: 20px; padding: 30px; margin-bottom: 30px;
+            display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
             backdrop-filter: blur(10px);
         }
-
-        .header h1 {
-            font-size: 22px;
-            font-weight: 800;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-        .header h1 .highlight {
-            background: linear-gradient(135deg, var(--gold-light), var(--primary-light));
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-        }
-
-        .header .assistant-badge {
-            font-size: 13px;
-            background: rgba(168,85,247,0.15);
-            color: var(--xp-purple);
-            padding: 4px 14px;
-            border-radius: 20px;
-            border: 1px solid rgba(168,85,247,0.2);
-        }
-
-        .header .actions {
-            display: flex;
-            gap: 8px;
-            flex-wrap: wrap;
-        }
-
-        /* ==========================================
-                   SECTION 5: الإحصائيات السريعة
-                   ========================================== */
-        .stats-mini {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
-            gap: 10px;
-            margin-bottom: 16px;
-        }
-
-        .stats-mini .stat {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 10px;
-            padding: 12px 16px;
-            text-align: center;
-            backdrop-filter: blur(10px);
-            transition: all 0.3s ease;
-        }
-        .stats-mini .stat:hover {
-            border-color: var(--gold);
-            transform: translateY(-2px);
-        }
-
-        .stats-mini .stat .num {
-            font-size: 22px;
-            font-weight: 800;
-            color: var(--gold-light);
-        }
-        .stats-mini .stat .num.xp {
-            color: var(--xp-gold);
-        }
-        .stats-mini .stat .num.success {
-            color: var(--success);
-        }
-        .stats-mini .stat .num.warning {
-            color: var(--warning);
-        }
-        .stats-mini .stat .label {
-            font-size: 12px;
-            color: var(--text-muted);
-        }
-
-        /* ==========================================
-                   SECTION 6: بطاقة المساعد مع XP
-                   ========================================== */
-        .assistant-card {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 14px;
-            padding: 20px 24px;
-            backdrop-filter: blur(10px);
-            margin-bottom: 16px;
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            align-items: center;
-            position: relative;
-            overflow: hidden;
-        }
-
-        .assistant-card::before {
-            content: '';
-            position: absolute;
-            top: -50%;
-            right: -20%;
-            width: 200px;
-            height: 200px;
-            background: radial-gradient(circle, rgba(255,215,0,0.05), transparent);
-            border-radius: 50%;
-            pointer-events: none;
-        }
-
-        .assistant-card .avatar {
-            width: 64px;
-            height: 64px;
-            border-radius: 50%;
+        .avatar {
+            width: 80px; height: 80px; border-radius: 50%;
             background: linear-gradient(135deg, var(--gold), var(--gold-light));
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 28px;
-            font-weight: 700;
-            color: #1a1a1a;
-            flex-shrink: 0;
-            position: relative;
-            z-index: 1;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 36px; font-weight: 800; color: #000; flex-shrink: 0;
         }
-
-        .assistant-card .info {
-            flex: 1;
-            position: relative;
-            z-index: 1;
+        .header-info h1 { font-size: 1.8rem; margin-bottom: 6px; }
+        .header-info p { color: var(--text-secondary); font-size: 0.95rem; }
+        .xp-badge {
+            background: linear-gradient(135deg, rgba(255,215,0,0.15), rgba(168,85,247,0.1));
+            border: 1px solid rgba(255,215,0,0.3); border-radius: 12px;
+            padding: 8px 18px; font-size: 0.9rem; color: var(--xp-gold);
+            display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
         }
-        .assistant-card .info .name {
-            font-size: 20px;
-            font-weight: 700;
+        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
+        .panel {
+            background: var(--glass); border: 1px solid var(--glass-border);
+            border-radius: 16px; padding: 24px; backdrop-filter: blur(10px);
         }
-        .assistant-card .info .email {
-            font-size: 14px;
-            color: var(--text-muted);
-        }
-        .assistant-card .info .xp {
-            margin-top: 4px;
-            font-size: 14px;
-            color: var(--xp-gold);
-            font-weight: 600;
-        }
-
-        .assistant-card .info .xp span {
-            background: rgba(255,215,0,0.1);
-            padding: 2px 12px;
-            border-radius: 20px;
-            border: 1px solid rgba(255,215,0,0.2);
-        }
-
-        .assistant-card .xp-animation {
-            position: absolute;
-            top: 10px;
-            left: 10px;
-            font-size: 28px;
-            animation: floatXP 2s ease-in-out infinite;
-            z-index: 0;
-        }
-
-        @keyframes floatXP {
-            0%, 100% { transform: translateY(0) rotate(0deg); }
-            50% { transform: translateY(-10px) rotate(10deg); }
-        }
-
-        /* ==========================================
-                   SECTION 7: الصلاحيات
-                   ========================================== */
-        .permissions-panel {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 14px;
-            padding: 16px 20px;
-            backdrop-filter: blur(10px);
-            margin-bottom: 16px;
-        }
-
-        .permissions-panel .panel-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-bottom: 10px;
-        }
-
-        .permissions-panel .panel-header h3 {
-            font-size: 16px;
-            font-weight: 700;
-        }
-
-        .perm-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 8px;
-        }
-
+        .panel h3 { font-size: 1.1rem; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
+        .perm-list { display: flex; flex-wrap: wrap; gap: 8px; }
         .perm-tag {
-            padding: 6px 14px;
-            border-radius: 20px;
-            font-size: 13px;
-            background: rgba(201,162,39,0.1);
-            color: var(--gold-light);
+            padding: 6px 14px; border-radius: 20px; font-size: 13px;
+            background: rgba(201,162,39,0.1); color: var(--gold-light);
             border: 1px solid rgba(201,162,39,0.2);
         }
-
-        .perm-tag.perm-admin {
-            background: rgba(168,85,247,0.15);
-            color: var(--xp-purple);
-            border-color: rgba(168,85,247,0.2);
-        }
-
-        .perm-tag.perm-high {
-            background: rgba(74,222,128,0.1);
-            color: var(--success);
-            border-color: rgba(74,222,128,0.2);
-        }
-
-        /* ==========================================
-                   SECTION 8: اللوحات (Panels)
-                   ========================================== */
-        .panel {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 14px;
-            padding: 16px 20px;
-            backdrop-filter: blur(10px);
-            margin-bottom: 16px;
-        }
-
-        .panel .panel-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 8px;
-            margin-bottom: 12px;
-        }
-
-        .panel .panel-header h3 {
-            font-size: 16px;
-            font-weight: 700;
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .panel .panel-header .badge {
-            font-size: 11px;
-            background: rgba(255,255,255,0.06);
-            padding: 2px 12px;
-            border-radius: 20px;
-            color: var(--text-muted);
-        }
-
-        /* ==========================================
-                   SECTION 9: سجل المكافآت (XP History)
-                   ========================================== */
-        .xp-history {
-            max-height: 200px;
-            overflow-y: auto;
-        }
-
-        .xp-history::-webkit-scrollbar {
-            width: 4px;
-        }
-        .xp-history::-webkit-scrollbar-thumb {
-            background: var(--gold);
-            border-radius: 4px;
-        }
-
-        .xp-entry {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 6px 0;
-            border-bottom: 1px solid var(--glass-border);
-            font-size: 13px;
-        }
-
-        .xp-entry:last-child {
-            border-bottom: none;
-        }
-
-        .xp-entry .xp-amount {
-            color: var(--xp-gold);
-            font-weight: 700;
-        }
-
-        .xp-entry .xp-reason {
-            color: var(--text-secondary);
-        }
-
-        .xp-entry .xp-time {
-            font-size: 11px;
-            color: var(--text-muted);
-        }
-
-        /* ==========================================
-                   SECTION 10: الجداول
-                   ========================================== */
-        .table-responsive {
-            overflow-x: auto;
-        }
-
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 13px;
-        }
-
-        th, td {
-            padding: 8px 10px;
-            text-align: right;
-            border-bottom: 1px solid var(--glass-border);
-            font-size: 13px;
-        }
-
-        th {
-            color: var(--text-muted);
-            font-weight: 600;
-            white-space: nowrap;
-        }
-
-        tr:hover {
-            background: rgba(255,255,255,0.02);
-        }
-
-        .status-badge {
-            padding: 2px 10px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-        }
-
-        .status-badge.completed {
-            background: rgba(74,222,128,0.15);
-            color: var(--success);
-        }
-
-        .status-badge.pending {
-            background: rgba(251,191,36,0.15);
-            color: var(--warning);
-        }
-
-        .status-badge.in_progress {
-            background: rgba(96,165,250,0.15);
-            color: var(--info);
-        }
-
-        /* ==========================================
-                   SECTION 11: بطاقات المهام
-                   ========================================== */
-        .tasks-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
-            gap: 12px;
-        }
-
-        .task-card {
-            background: rgba(255,255,255,0.03);
-            border: 1px solid var(--glass-border);
-            border-radius: 10px;
-            padding: 14px 16px;
-            transition: all 0.3s ease;
-        }
-
-        .task-card:hover {
-            border-color: var(--gold);
-        }
-
-        .task-card .task-title {
-            font-weight: 600;
-            font-size: 14px;
-            margin-bottom: 4px;
-        }
-
-        .task-card .task-desc {
-            font-size: 12px;
-            color: var(--text-muted);
-            margin-bottom: 8px;
-        }
-
-        .task-card .task-meta {
-            display: flex;
-            justify-content: space-between;
-            font-size: 11px;
-            color: var(--text-muted);
-        }
-
-        .task-card .task-xp {
-            margin-top: 6px;
-            font-size: 12px;
-            color: var(--xp-gold);
-            background: rgba(255,215,0,0.06);
-            padding: 2px 10px;
-            border-radius: 12px;
-            display: inline-block;
-        }
-
-        /* ==========================================
-                   SECTION 12: رسائل التنبيه
-                   ========================================== */
-        .toast {
-            position: fixed;
-            bottom: 30px;
-            left: 30px;
-            padding: 14px 24px;
-            border-radius: 12px;
-            background: var(--primary-dark);
-            border: 1px solid var(--glass-border);
-            backdrop-filter: blur(20px);
-            box-shadow: var(--shadow);
-            z-index: 2000;
-            display: none;
-            animation: slideUp 0.3s ease;
-            max-width: 400px;
-        }
-
-        .toast.show {
+        .perm-tag.admin { background: rgba(168,85,247,0.15); color: var(--xp-purple); border-color: rgba(168,85,247,0.2); }
+        .perm-tag.high { background: rgba(74,222,128,0.1); color: var(--success); border-color: rgba(74,222,128,0.2); }
+        .stat-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--glass-border); }
+        .stat-row:last-child { border-bottom: none; }
+        .stat-label { color: var(--text-secondary); }
+        .stat-value { font-weight: 700; }
+        .actions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; }
+        .action-card {
+            background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border);
+            border-radius: 12px; padding: 16px; text-align: center;
+            transition: all 0.3s ease; text-decoration: none; color: inherit;
             display: block;
         }
-
-        .toast .title {
-            font-weight: 700;
-            font-size: 15px;
+        .action-card:hover { border-color: var(--gold); transform: translateY(-3px); background: rgba(255,255,255,0.06); }
+        .action-icon { font-size: 28px; margin-bottom: 8px; }
+        .action-title { font-weight: 700; font-size: 0.95rem; }
+        .action-desc { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
+        .task-list { display: flex; flex-direction: column; gap: 10px; }
+        .task-item {
+            background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border);
+            border-radius: 10px; padding: 12px 16px;
         }
-
-        .toast .message {
-            font-size: 13px;
-            color: var(--text-secondary);
+        .task-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; }
+        .task-meta { font-size: 0.75rem; color: var(--text-muted); }
+        .back-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            color: var(--gold); text-decoration: none; margin-bottom: 20px;
+            font-weight: 600;
         }
-
-        .toast.success {
-            border-color: var(--success);
+        .toast {
+            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
+            background: var(--glass); border: 1px solid var(--gold);
+            padding: 14px 28px; border-radius: 12px; z-index: 9999;
+            display: none; font-weight: 600;
         }
-        .toast.success .title {
-            color: var(--success);
-        }
-
-        .toast.error {
-            border-color: var(--danger);
-        }
-        .toast.error .title {
-            color: var(--danger);
-        }
-
-        .toast.info {
-            border-color: var(--gold);
-        }
-        .toast.info .title {
-            color: var(--gold-light);
-        }
-
-        .toast.xp {
-            border-color: var(--xp-gold);
-        }
-        .toast.xp .title {
-            color: var(--xp-gold);
-        }
-
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(20px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-
-        /* ==========================================
-                   SECTION 13: التجاوب مع الشاشات
-                   ========================================== */
         @media (max-width: 768px) {
-            .header {
-                flex-direction: column;
-                align-items: stretch;
-                text-align: center;
-            }
-            .header .actions {
-                justify-content: center;
-            }
-            .container {
-                padding: 12px;
-            }
-            .assistant-card {
-                flex-direction: column;
-                text-align: center;
-            }
-            .stats-mini {
-                grid-template-columns: repeat(2, 1fr);
-            }
-            .tasks-grid {
-                grid-template-columns: 1fr;
-            }
-            th, td {
-                padding: 4px 6px;
-                font-size: 12px;
-            }
-        }
-
-        @media (max-width: 480px) {
-            .stats-mini {
-                grid-template-columns: 1fr;
-            }
-            .perm-tag {
-                font-size: 11px;
-                padding: 4px 10px;
-            }
+            .header { text-align: center; justify-content: center; }
+            .grid { grid-template-columns: 1fr; }
+            .actions-grid { grid-template-columns: 1fr 1fr; }
         }
     </style>
 </head>
-
 <body>
     {{ theme_style(student)|safe }}
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
-    <div class="bg-layer"></div>
     <div class="container">
+        <a href="/student/dashboard" class="back-btn">⬅ العودة للرئيسية</a>
 
-        <!-- ===== HEADER ===== -->
         <div class="header">
-            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
-                <h1>🧑‍🤝‍🧑 <span class="highlight">لوحة المساعد</span></h1>
-                <span class="assistant-badge">⭐ مساعد نشط</span>
-            </div>
-            <div class="actions">
-                <button class="btn btn-outline btn-sm" onclick="refreshData()">🔄 تحديث</button>
-                <a href="{{ url_for('student_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a>
-            </div>
-        </div>
-
-        <!-- ===== بطاقة المساعد ===== -->
-        <div class="assistant-card">
-            <div class="xp-animation">⭐</div>
             <div class="avatar">{{ assistant_info.name[0]|upper if assistant_info.name else '?' }}</div>
-            <div class="info">
-                <div class="name">{{ assistant_info.name }}</div>
-                <div class="email">{{ assistant_info.email }}</div>
-                <div class="xp">⭐ نقاط XP: <span>{{ assistant_info.xp_points|default(0, true) }}</span></div>
-                <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
-                    🎯 +5 XP عند إكمال كل مهمة (تلقائياً)
-                </div>
-            </div>
-            <div style="text-align:left;font-size:12px;color:var(--text-muted);">
-                📅 تاريخ المنح: {{ assistant_info.granted_at|fmtdt if assistant_info.granted_at else '-' }}
-                <br>
-                📊 المهام المكتملة: {{ stats.completed_tasks|default(0, true) }}
-                <br>
-                ⭐ إجمالي XP: {{ assistant_info.xp_points|default(0, true) }}
+            <div class="header-info">
+                <h1>{{ assistant_info.name }}</h1>
+                <p>{{ assistant_info.email }}</p>
+                <div class="xp-badge">⭐ {{ assistant_info.xp_points|default(0, true) }} نقاط XP</div>
             </div>
         </div>
 
-        <!-- ===== الإحصائيات السريعة ===== -->
-        <div class="stats-mini">
-            <div class="stat">
-                <div class="num">{{ stats.total_students|default(0, true) }}</div>
-                <div class="label">👨‍🎓 إجمالي الطلاب</div>
-            </div>
-            <div class="stat">
-                <div class="num success">{{ stats.completed_tasks|default(0, true) }}</div>
-                <div class="label">✅ مهام مكتملة</div>
-            </div>
-            <div class="stat">
-                <div class="num warning">{{ stats.pending_tasks|default(0, true) }}</div>
-                <div class="label">⏳ مهام معلقة</div>
-            </div>
-            <div class="stat">
-                <div class="num xp">{{ stats.total_xp|default(0, true) }}</div>
-                <div class="label">⭐ مجموع XP</div>
-            </div>
-        </div>
-
-        <!-- ===== الصلاحيات ===== -->
-        <div class="permissions-panel">
-            <div class="panel-header">
-                <h3>🔑 صلاحياتك الممنوحة</h3>
-                <span style="font-size:12px;color:var(--text-muted);">{{ perms|length }} صلاحية</span>
-            </div>
-            <div class="perm-list">
-                {% for p in perms %}
-                <span class="perm-tag {% if p == 'view_all' %}perm-admin{% elif p in ['manage_evaluation', 'manage_competitions'] %}perm-high{% endif %}">
-                    {{ perm_labels.get(p, p) }}
-                </span>
-                {% else %}
-                <span style="color:var(--text-muted);">لا توجد صلاحيات محددة</span>
-                {% endfor %}
-            </div>
-        </div>
-
-        <!-- ===== سجل المكافآت (XP History) ===== -->
-        {% if xp_history and xp_history|length > 0 %}
-        <div class="panel">
-            <div class="panel-header">
-                <h3>⭐ سجل المكافآت</h3>
-                <span class="badge">{{ xp_history|length }} مكافأة</span>
-            </div>
-            <div class="xp-history">
-                {% for entry in xp_history %}
-                <div class="xp-entry">
-                    <span class="xp-amount">+{{ entry.amount }} XP</span>
-                    <span class="xp-reason">{{ entry.reason }}</span>
-                    <span class="xp-time">{{ entry.created_at|fmtdt if entry.created_at else '-' }}</span>
-                </div>
-                {% endfor %}
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- ===== المهام الموكلة ===== -->
-        {% if tasks and tasks|length > 0 %}
-        <div class="panel">
-            <div class="panel-header">
-                <h3>📋 المهام الموكلة</h3>
-                <span class="badge">{{ tasks|selectattr('status', 'equalto', 'pending')|list|length }} معلقة</span>
-            </div>
-            <div class="tasks-grid">
-                {% for task in tasks %}
-                <div class="task-card">
-                    <div class="task-title">{{ task.title }}</div>
-                    <div class="task-desc">{{ task.description or 'لا يوجد وصف' }}</div>
-                    <div class="task-meta">
-                        <span>📅 {{ task.created_at|fmtdt if task.created_at else '-' }}</span>
-                        <span class="status-badge {{ task.status }}">
-                            {% if task.status == 'completed' %}✅ مكتمل
-                            {% elif task.status == 'in_progress' %}🔄 قيد التنفيذ
-                            {% else %}⏳ معلق{% endif %}
-                        </span>
-                    </div>
-                    {% if task.status != 'completed' %}
-                    <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
-                        <button class="btn btn-success btn-xs" onclick="completeTask('{{ task.id }}', '{{ task.title }}')">
-                            ✅ إكمال المهمة (+5 XP)
-                        </button>
-                        <button class="btn btn-info btn-xs" onclick="updateTaskStatus('{{ task.id }}', 'in_progress')">
-                            🔄 قيد التنفيذ
-                        </button>
-                    </div>
+        <div class="grid">
+            <!-- الصلاحيات -->
+            <div class="panel">
+                <h3>🔐 صلاحياتك</h3>
+                <div class="perm-list">
+                    {% for p in perms %}
+                    <span class="perm-tag {% if p == 'view_all' %}admin{% elif p in ['manage_evaluation','manage_competitions'] %}high{% endif %}">
+                        {{ perm_labels.get(p, p) }}
+                    </span>
                     {% else %}
-                    <div class="task-xp">⭐ +5 XP مكافأة</div>
-                    {% endif %}
+                    <span style="color:var(--text-muted);">لا توجد صلاحيات محددة</span>
+                    {% endfor %}
+                </div>
+            </div>
+
+            <!-- الإحصائيات -->
+            <div class="panel">
+                <h3>📊 إحصائيات</h3>
+                <div class="stat-row">
+                    <span class="stat-label">المهام المنجزة</span>
+                    <span class="stat-value">{{ stats.completed_tasks|default(0, true) }}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">إجمالي XP</span>
+                    <span class="stat-value" style="color:var(--xp-gold);">{{ assistant_info.xp_points|default(0, true) }}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">تاريخ المنح</span>
+                    <span class="stat-value">{{ assistant_info.granted_at|fmtdt if assistant_info.granted_at else '-' }}</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- روابط سريعة حسب الصلاحيات -->
+        <div class="panel" style="margin-top: 20px;">
+            <h3>⚡ روابط سريعة</h3>
+            <div class="actions-grid">
+                <a href="/student/dashboard" class="action-card">
+                    <div class="action-icon">🏠</div>
+                    <div class="action-title">لوحة الطالب</div>
+                    <div class="action-desc">العودة للوحة الرئيسية</div>
+                </a>
+                {% if 'manage_evaluation' in perms or 'view_all' in perms %}
+                <a href="/student/evaluation" class="action-card">
+                    <div class="action-icon">📊</div>
+                    <div class="action-title">التقييم</div>
+                    <div class="action-desc">إدارة التقييمات</div>
+                </a>
+                {% endif %}
+                {% if 'manage_competitions' in perms or 'view_all' in perms %}
+                <a href="/student/competitions" class="action-card">
+                    <div class="action-icon">🏆</div>
+                    <div class="action-title">المسابقات</div>
+                    <div class="action-desc">إدارة المسابقات</div>
+                </a>
+                {% endif %}
+                {% if 'manage_homework' in perms or 'view_all' in perms %}
+                <a href="/student/homework" class="action-card">
+                    <div class="action-icon">📚</div>
+                    <div class="action-title">الواجبات</div>
+                    <div class="action-desc">إدارة الواجبات</div>
+                </a>
+                {% endif %}
+                {% if 'manage_attendance' in perms or 'view_all' in perms %}
+                <a href="/student/attendance" class="action-card">
+                    <div class="action-icon">📋</div>
+                    <div class="action-title">الحضور</div>
+                    <div class="action-desc">تسجيل الحضور</div>
+                </a>
+                {% endif %}
+                {% if 'manage_memorization' in perms or 'view_all' in perms %}
+                <a href="/student/memorization" class="action-card">
+                    <div class="action-icon">📖</div>
+                    <div class="action-title">التسميع</div>
+                    <div class="action-desc">إدارة التسميع</div>
+                </a>
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- آخر المهام -->
+        {% if tasks %}
+        <div class="panel" style="margin-top: 20px;">
+            <h3>📋 آخر المهام</h3>
+            <div class="task-list">
+                {% for task in tasks %}
+                <div class="task-item">
+                    <div class="task-title">{{ task.title }}</div>
+                    <div class="task-meta">{{ task.status|fmtdt if task.status else '' }}</div>
                 </div>
                 {% endfor %}
             </div>
         </div>
         {% endif %}
-
-        <!-- ===== عرض الطلاب (إذا كانت الصلاحية موجودة) ===== -->
-        {% if 'view_students' in perms %}
-        <div class="panel">
-            <div class="panel-header">
-                <h3>👨‍🎓 قائمة الطلاب</h3>
-                <span class="badge">{{ students|length }} طالب</span>
-            </div>
-            <div class="table-responsive">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>#</th>
-                            <th>الاسم</th>
-                            <th>البريد</th>
-                            <th>الحالة</th>
-                            <th>نقاط XP</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for student in students %}
-                        <tr>
-                            <td>{{ loop.index }}</td>
-                            <td>{{ student.name }}</td>
-                            <td>{{ student.email }}</td>
-                            <td>
-                                <span class="status-badge {% if student.status == 'active' %}completed{% else %}pending{% endif %}">
-                                    {% if student.status == 'active' %}✅ نشط{% else %}⏸️ غير نشط{% endif %}
-                                </span>
-                            </td>
-                            <td>{{ student.xp_points|default(0, true) }}</td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px 0;">
-                                📭 لا يوجد طلاب
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- ===== التقييمات (إذا كانت الصلاحية موجودة) ===== -->
-        {% if 'manage_evaluation' in perms %}
-        <div class="panel">
-            <div class="panel-header">
-                <h3>📊 التقييمات الأخيرة</h3>
-                <a href="{{ url_for('evaluation') }}" class="btn btn-primary btn-sm">📊 الذهاب للتقييم</a>
-            </div>
-            <div class="table-responsive">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>الطالب</th>
-                            <th>التاريخ</th>
-                            <th>درجة الحفظ</th>
-                            <th>درجة المراجعة</th>
-                            <th>الحالة</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for eval in recent_evaluations %}
-                        <tr>
-                            <td>{{ eval.student_name }}</td>
-                            <td>{{ eval.date|fmtdt if eval.date else '-' }}</td>
-                            <td>{{ eval.score_save|default(0, true) }}</td>
-                            <td>{{ eval.score_rev|default(0, true) }}</td>
-                            <td>
-                                <span class="status-badge {% if eval.sent %}completed{% else %}pending{% endif %}">
-                                    {% if eval.sent %}✅ مرسل{% else %}⏳ غير مرسل{% endif %}
-                                </span>
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px 0;">
-                                📊 لا توجد تقييمات حديثة
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- ===== المسابقات (إذا كانت الصلاحية موجودة) ===== -->
-        {% if 'manage_competitions' in perms %}
-        <div class="panel">
-            <div class="panel-header">
-                <h3>🏆 المسابقات النشطة</h3>
-                <a href="{{ url_for('competitions') }}" class="btn btn-primary btn-sm">🏆 الذهاب للمسابقات</a>
-            </div>
-            <div class="table-responsive">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>اسم المسابقة</th>
-                            <th>التاريخ</th>
-                            <th>المشاركون</th>
-                            <th>الحالة</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for comp in active_competitions %}
-                        <tr>
-                            <td>{{ comp.name }}</td>
-                            <td>{{ comp.date|fmtdt if comp.date else '-' }}</td>
-                            <td>{{ comp.participants_count|default(0, true) }}</td>
-                            <td>
-                                <span class="status-badge {% if comp.active %}completed{% else %}pending{% endif %}">
-                                    {% if comp.active %}✅ نشطة{% else %}⏸️ غير نشطة{% endif %}
-                                </span>
-                            </td>
-                        </tr>
-                        {% else %}
-                        <tr>
-                            <td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px 0;">
-                                🏆 لا توجد مسابقات نشطة
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% endif %}
-
-        <!-- ===== روابط سريعة ===== -->
-        <div class="panel">
-            <div class="panel-header">
-                <h3>🔗 روابط سريعة</h3>
-            </div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-                {% if 'send_messages' in perms %}
-                <a href="{{ url_for('admin_messages') }}" class="btn btn-primary btn-sm">💬 الرسائل</a>
-                {% endif %}
-                {% if 'manage_evaluation' in perms %}
-                <a href="{{ url_for('evaluation') }}" class="btn btn-warning btn-sm">📊 التقييم</a>
-                {% endif %}
-                {% if 'grade_homework' in perms %}
-                <a href="{{ url_for('homework') }}" class="btn btn-info btn-sm">📚 الواجبات</a>
-                {% endif %}
-                {% if 'manage_competitions' in perms %}
-                <a href="{{ url_for('competitions') }}" class="btn btn-gold btn-sm">🏆 المسابقات</a>
-                {% endif %}
-                {% if 'view_students' in perms %}
-                <a href="{{ url_for('manage_students') }}" class="btn btn-outline btn-sm">👨‍🎓 الطلاب</a>
-                {% endif %}
-                {% if 'view_analytics' in perms %}
-                <a href="{{ url_for('admin_analytics') }}" class="btn btn-outline btn-sm">📈 التحليلات</a>
-                {% endif %}
-            </div>
-        </div>
-
     </div>
-
-    <!-- ==========================================
-    رسالة التنبيه (Toast)
-    ========================================== -->
-    <div class="toast" id="toast">
-        <div class="title" id="toastTitle">✅ تم</div>
-        <div class="message" id="toastMessage">تم تنفيذ العملية بنجاح</div>
-    </div>
-
-    <!-- ==========================================
-    جافا سكريبت
-    ========================================== -->
-    <script>
-        /**
-         * ==========================================
-         * SECTION 1: دوال مساعدة
-         * ==========================================
-         */
-
-        function showToast(type, title, message) {
-            const toast = document.getElementById('toast');
-            toast.className = 'toast show ' + type;
-            document.getElementById('toastTitle').textContent = title;
-            document.getElementById('toastMessage').textContent = message;
-
-            clearTimeout(toast._timeout);
-            toast._timeout = setTimeout(function() {
-                toast.classList.remove('show');
-            }, 4000);
-        }
-
-        function refreshData() {
-            showToast('info', '🔄', 'جاري تحديث البيانات...');
-            setTimeout(function() {
-                location.reload();
-            }, 1000);
-        }
-
-
-        /**
-         * ==========================================
-         * SECTION 2: إدارة المهام مع XP التلقائي
-         * ==========================================
-         */
-
-        function completeTask(taskId, taskTitle) {
-            if (!confirm('✅ تأكيد إكمال المهمة "' + taskTitle + '"؟\\nستحصل على +5 نقاط XP تلقائياً!')) return;
-
-            showToast('info', '⏳', 'جاري إكمال المهمة...');
-
-            fetch('/admin/assistant/complete_task', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        task_id: taskId
-                    })
-                })
-                .then(function(r) {
-                    return r.json();
-                })
-                .then(function(data) {
-                    if (data.success) {
-                        showToast('xp', '⭐ مكافأة!', 'تم إكمال المهمة وحصلت على +5 XP');
-                        setTimeout(function() {
-                            location.reload();
-                        }, 1500);
-                    } else {
-                        showToast('error', '❌ خطأ', data.message || 'حدث خطأ');
-                    }
-                })
-                .catch(function() {
-                    showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال');
-                });
-        }
-
-        function updateTaskStatus(taskId, status) {
-            const statusMap = {
-                'in_progress': '🔄 قيد التنفيذ'
-            };
-
-            if (!confirm('تأكيد تغيير حالة المهمة إلى "' + statusMap[status] + '"؟')) return;
-
-            showToast('info', '⏳', 'جاري تحديث حالة المهمة...');
-
-            fetch('/admin/assistant/update_task_status', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({
-                        task_id: taskId,
-                        status: status
-                    })
-                })
-                .then(function(r) {
-                    return r.json();
-                })
-                .then(function(data) {
-                    if (data.success) {
-                        showToast('success', '✅ تم', 'تم تحديث حالة المهمة');
-                        setTimeout(function() {
-                            location.reload();
-                        }, 1000);
-                    } else {
-                        showToast('error', '❌ خطأ', data.message || 'حدث خطأ');
-                    }
-                })
-                .catch(function() {
-                    showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال');
-                });
-        }
-
-
-        /**
-         * ==========================================
-         * SECTION 3: تشغيل التحديث التلقائي
-         * ==========================================
-         */
-
-        console.log('🧑‍🤝‍🧑 لوحة المساعد جاهزة');
-        console.log('⭐ نظام XP التلقائي: +5 XP عند إكمال كل مهمة');
-        console.log('🔑 الصلاحيات: ' + '{{ perms|join(", ") }}');
-        console.log('⭐ نقاط XP: {{ assistant_info.xp_points|default(0, true) }}');
-        console.log('📋 المهام المعلقة: {{ tasks|selectattr("status", "equalto", "pending")|list|length }}');
-    </script>
-
+    <div class="toast" id="toast"></div>
 </body>
 </html>
 '''
@@ -28379,32 +27565,41 @@ def unlock_student_route(target_id):
 def sell_book_route():
     """عرض كتاب للبيع من طالب"""
     student = get_current_user()
-    
+
     title = request.form.get('title')
     author = request.form.get('author')
     description = request.form.get('description')
     price_points = request.form.get('price_points', 10)
     cover_file = request.files.get('cover_file')
-    
+    pdf_file = request.files.get('pdf_file')
+
     if not title:
         return jsonify({'success': False, 'message': 'عنوان الكتاب مطلوب'})
-    
+
     # رفع صورة الغلاف
     cover_url = None
     if cover_file and cover_file.filename:
         cover_url = save_uploaded_file(cover_file, 'books')
-    
+
+    # رفع ملف PDF
+    pdf_url = None
+    if pdf_file and pdf_file.filename:
+        if pdf_file.filename.lower().endswith('.pdf'):
+            pdf_url = save_uploaded_file(pdf_file, 'books')
+        else:
+            return jsonify({'success': False, 'message': 'يجب أن يكون الملف بصيغة PDF'})
+
     create_book_offer({
         'student_id': student['id'],
         'title': title,
         'author': author,
         'description': description,
         'price_points': int(price_points),
-        'cover_url': cover_url
+        'cover_url': cover_url,
+        'pdf_url': pdf_url
     })
-    
-    return jsonify({'success': True, 'message': 'تم إرسال العرض بنجاح'})
-@app.route('/student/duels')
+
+    return jsonify({'success': True, 'message': 'تم إرسال العرض بنجاح'})@app.route('/student/duels')
 @login_required('student')
 def student_duels():
     """تحديات الطالب الفردية"""
