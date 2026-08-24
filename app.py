@@ -27782,10 +27782,23 @@ def student_memorization():
     ثم يرسلها دفعة واحدة بزر الحفظ لتصبح 'بانتظار مصادقة المشرف'. لا تُحتسب
     ضمن عدد الأجزاء والمستوى إلا بعد أن يصادق عليها المشرف من لوحته"""
     student = get_current_user()
-    memorized_ids = get_student_memorized_surahs(student['id'])
-    pending = get_student_pending_surahs(student['id'])
+    student_id = student['id']
+
+    # ✅ استعلام واحد يجلب السور المحفوظة والمعلقة دفعة واحدة
+    rows = query_all("""
+        SELECT surah_number, 1 as memorized FROM student_surahs WHERE student_id = %s
+        UNION ALL
+        SELECT surah_number, 0 as memorized FROM student_surah_pending WHERE student_id = %s
+    """, (student_id, student_id))
+
+    # بناء المجموعات من نتيجة الاستعلام
+    memorized_ids = {row['surah_number'] for row in rows if row['memorized'] == 1}
+    pending = {row['surah_number'] for row in rows if row['memorized'] == 0}
+
+    # حساب الأجزاء المكتملة
     juz_count, completed_juz = compute_juz_count(memorized_ids)
     breakdown = compute_hifz_breakdown(memorized_ids)
+
     juz_list = []
     for j in range(1, 31):
         surahs_in_juz = sorted(JUZ_SURAHS[j])
@@ -27797,13 +27810,13 @@ def student_memorization():
                     'number': s,
                     'name': SURAH_NAMES[s - 1],
                     'memorized': s in memorized_ids,
-                    # التحديد المعروض في الصندوق: يعكس الطلب المعلّق إن وُجد، وإلا الحالة المؤكدة
-                    'checked': pending[s] if s in pending else (s in memorized_ids),
+                    'checked': (s in pending) or (s in memorized_ids),
                     'pending': s in pending,
                 }
                 for s in surahs_in_juz
             ],
         })
+
     return render_template_string(STUDENT_MEMORIZATION_HTML,
                                    student=student,
                                    juz_list=juz_list,
