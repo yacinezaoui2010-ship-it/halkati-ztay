@@ -138,8 +138,7 @@ def get_db():
     conn = psycopg2.connect(
         DATABASE_URL,
         cursor_factory=psycopg2.extras.RealDictCursor,
-        connect_timeout=10,
-        options='-c statement_timeout=30000'
+        connect_timeout=10
     )
     return conn
 
