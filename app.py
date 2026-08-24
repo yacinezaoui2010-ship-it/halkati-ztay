@@ -837,7 +837,7 @@ def toggle_student_surah(student_id, surah_number, memorized):
     """يسجّل/يلغي تسجيل سورة كمحفوظة لدى الطالب، ثم يعيد تقييم شارات المستوى"""
     if memorized:
         execute_query(
-            "INSERT INTO student_surahs (student_id, surah_number) VALUES (?, ?) ON CONFLICT DO NOTHING",
+            "INSERT INTO student_surahs (student_id, surah_number) VALUES (?, ?) ON CONFLICT DO NOTHING RETURNING student_id",
             (student_id, surah_number)
         )
     else:
@@ -16348,7 +16348,6 @@ STUDENT_DASHBOARD_HTML = '''
         <a href="{{ url_for('student_report') }}">📊 تقريري</a>
         <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
         <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
-        <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
@@ -16369,7 +16368,6 @@ STUDENT_DASHBOARD_HTML = '''
     <div class="quick-actions">
         <a href="{{ url_for('student_homework') }}" class="quick-action"><span class="icon">📚</span><span class="label">واجباتي</span></a>
         <a href="{{ url_for('student_messages') }}" class="quick-action"><span class="icon">💬</span><span class="label">رسائلي</span></a>
-        <a href="{{ url_for('student_gamification') }}" class="quick-action"><span class="icon">🎮</span><span class="label">شاراتي</span></a>
         <a href="{{ url_for('leaderboard') }}" class="quick-action"><span class="icon">🥇</span><span class="label">الصدارة</span></a>
     </div>
     <div class="eval-panel">
@@ -17758,7 +17756,6 @@ STUDENT_PROFILE_HTML = '''
         <a href="{{ url_for('student_report') }}">📊 تقريري</a>
         <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
         <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
-        <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
@@ -18479,7 +18476,6 @@ STUDENT_REPORT_HTML = '''
             <a href="{{ url_for('student_report') }}" class="active">📊 تقريري</a>
             <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
-            <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
@@ -19740,7 +19736,6 @@ STUDENT_HOMEWORK_HTML = '''
             <a href="{{ url_for('student_report') }}">📊 تقريري</a>
             <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
-            <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
@@ -20855,7 +20850,6 @@ STUDENT_COMPETITIONS_HTML = '''
             <a href="{{ url_for('student_report') }}">📊 تقريري</a>
             <a href="{{ url_for('student_competitions') }}" class="active">🏆 مسابقاتي</a>
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
-            <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
@@ -21160,252 +21154,6 @@ STUDENT_COMPETITIONS_HTML = '''
         console.log('📊 حالات: مفتوحة، جارية، منتهية، قادمة');
     </script>
 
-</body>
-</html>
-'''
-# ============================================================ #
-# ====== الصفحة 28: نقاطي وشاراتي (STUDENT_GAMIFICATION) ====== #
-# ============================================================ #
-STUDENT_GAMIFICATION_HTML = '''
-<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>نقاطي وشاراتي - حلقتي زتاي</title>
-    <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
-    <style>
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        :root {
-            --primary: #134e5e;
-            --primary-light: #1a7a8e;
-            --primary-dark: #0a2a32;
-            --gold: #c9a227;
-            --gold-light: #e8c84a;
-            --gold-glow: rgba(201,162,39,0.15);
-            --glass: rgba(255,255,255,0.06);
-            --glass-border: rgba(255,255,255,0.10);
-            --text-primary: #ffffff;
-            --text-secondary: rgba(255,255,255,0.7);
-            --text-muted: rgba(255,255,255,0.35);
-            --shadow: 0 8px 32px rgba(0,0,0,0.3);
-            --transition: 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
-            --success: #4ade80;
-            --danger: #f87171;
-            --warning: #fbbf24;
-            --info: #60a5fa;
-        }
-        body {
-            font-family: 'Tajawal', sans-serif;
-            background: var(--primary-dark);
-            min-height: 100vh;
-            color: var(--text-primary);
-            overflow-x: hidden;
-        }
-        .bg-layer {
-            position: fixed;
-            inset: 0;
-            z-index: 0;
-            pointer-events: none;
-            background:
-                radial-gradient(ellipse 60% 40% at 30% 20%, rgba(26,122,142,0.08), transparent),
-                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
-        }
-        .container { max-width: 1000px; margin: 0 auto; padding: 16px 20px 30px; position: relative; z-index: 1; }
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 12px;
-            padding: 14px 22px;
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 14px;
-            margin-bottom: 16px;
-            backdrop-filter: blur(10px);
-        }
-        .header h1 { font-size: 22px; font-weight: 800; display: flex; align-items: center; gap: 8px; }
-        .header h1 .highlight { background: linear-gradient(135deg, var(--gold-light), var(--primary-light)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .header .actions { display: flex; gap: 8px; flex-wrap: wrap; }
-        .btn { padding: 7px 16px; border: none; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; transition: all var(--transition); text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 4px 16px rgba(0,0,0,0.3); }
-        .btn-primary { background: var(--primary-light); color: #fff; }
-        .btn-gold { background: linear-gradient(135deg, var(--gold), var(--gold-light)); color: #1a1a1a; }
-        .btn-outline { background: transparent; border: 1.5px solid var(--glass-border); color: var(--text-secondary); }
-        .btn-outline:hover { border-color: var(--gold); color: #fff; }
-        .btn-success { background: var(--success); color: #1a1a1a; }
-        .btn-danger { background: var(--danger); color: #fff; }
-        .btn-warning { background: var(--warning); color: #1a1a1a; }
-        .btn-info { background: var(--info); color: #1a1a1a; }
-        .btn-sm { padding: 4px 12px; font-size: 12px; }
-        .btn-xs { padding: 2px 10px; font-size: 11px; }
-        .nav-bar {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 4px;
-            margin-bottom: 16px;
-            padding: 10px 16px;
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 14px;
-            backdrop-filter: blur(10px);
-        }
-        .nav-bar a { color: var(--text-muted); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; transition: all 0.3s ease; }
-        .nav-bar a:hover { background: rgba(255,255,255,0.04); color: var(--text-primary); }
-        .nav-bar a.active { background: var(--gold); color: #1a1a1a; }
-        .points-display {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 16px;
-            padding: 24px 28px;
-            backdrop-filter: blur(10px);
-            margin-bottom: 20px;
-            text-align: center;
-        }
-        .points-display .big-number { font-size: 56px; font-weight: 900; background: linear-gradient(135deg, var(--gold-light), var(--gold)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
-        .points-display .label { font-size: 16px; color: var(--text-muted); }
-        .points-display .sub { font-size: 14px; color: var(--text-secondary); margin-top: 4px; }
-        .points-display .next-level { margin-top: 12px; padding: 8px 16px; background: rgba(255,255,255,0.04); border-radius: 10px; border: 1px solid var(--glass-border); }
-        .points-display .next-level .progress-bar { height: 6px; border-radius: 3px; background: rgba(255,255,255,0.06); margin-top: 4px; overflow: hidden; }
-        .points-display .next-level .progress-bar .fill { height: 100%; border-radius: 3px; background: linear-gradient(90deg, var(--gold), var(--gold-light)); transition: width 0.5s ease; }
-        .badges-section {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 14px;
-            padding: 18px 22px;
-            backdrop-filter: blur(10px);
-            margin-bottom: 20px;
-        }
-        .badges-section .section-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 8px; }
-        .badges-section .section-header h3 { font-size: 17px; font-weight: 700; }
-        .badges-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; }
-        .badge-item { background: rgba(255,255,255,0.02); border: 1px solid var(--glass-border); border-radius: 12px; padding: 14px; text-align: center; transition: all 0.3s ease; }
-        .badge-item:hover { transform: translateY(-3px); border-color: var(--gold); }
-        .badge-item.earned { border-color: var(--gold); background: rgba(201,162,39,0.04); }
-        .badge-item.locked { opacity: 0.4; filter: grayscale(1); }
-        .badge-item .icon { font-size: 36px; display: block; margin-bottom: 4px; }
-        .badge-item .name { font-weight: 600; font-size: 14px; }
-        .badge-item .desc { font-size: 11px; color: var(--text-muted); }
-        .badge-item .lock-icon { font-size: 14px; margin-top: 4px; display: block; }
-        .tips-section {
-            background: var(--glass);
-            border: 1px solid var(--glass-border);
-            border-radius: 14px;
-            padding: 18px 22px;
-            backdrop-filter: blur(10px);
-        }
-        .tips-section h3 { font-size: 17px; font-weight: 700; margin-bottom: 12px; }
-        .tips-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
-        .tip-item { display: flex; align-items: center; gap: 10px; padding: 10px 14px; background: rgba(255,255,255,0.02); border-radius: 8px; border: 1px solid var(--glass-border); }
-        .tip-item .icon { font-size: 24px; }
-        .tip-item .info .title { font-weight: 600; font-size: 13px; }
-        .tip-item .info .desc { font-size: 12px; color: var(--text-muted); }
-        .toast {
-            position: fixed;
-            bottom: 30px;
-            left: 30px;
-            padding: 14px 24px;
-            border-radius: 12px;
-            background: var(--primary-dark);
-            border: 1px solid var(--glass-border);
-            backdrop-filter: blur(20px);
-            box-shadow: var(--shadow);
-            z-index: 2000;
-            display: none;
-            animation: slideUp 0.3s ease;
-            max-width: 400px;
-        }
-        .toast.show { display: block; }
-        .toast .title { font-weight: 700; font-size: 15px; }
-        .toast .message { font-size: 13px; color: var(--text-secondary); }
-        .toast.success { border-color: var(--success); }
-        .toast.success .title { color: var(--success); }
-        .toast.error { border-color: var(--danger); }
-        .toast.error .title { color: var(--danger); }
-        .toast.info { border-color: var(--gold); }
-        .toast.info .title { color: var(--gold-light); }
-        @keyframes slideUp { from { opacity: 0; transform: translateY(20px); } to { opacity: 1; transform: translateY(0); } }
-        @media (max-width: 768px) {
-            .header { flex-direction: column; align-items: stretch; text-align: center; }
-            .header .actions { justify-content: center; }
-            .container { padding: 12px; }
-            .nav-bar { justify-content: center; }
-            .badges-grid { grid-template-columns: repeat(2, 1fr); }
-            .points-display .big-number { font-size: 40px; }
-        }
-        @media (max-width: 480px) {
-            .badges-grid { grid-template-columns: 1fr 1fr; }
-            .tips-grid { grid-template-columns: 1fr; }
-        }
-    </style>
-</head>
-<body>
-    {{ theme_style(student)|safe }}
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
-<div class="bg-layer"></div>
-<div class="container">
-    <div class="header"><h1>🎮 <span class="highlight">نقاطي وشاراتي</span></h1><div class="actions"><a href="{{ url_for('student_points') }}" class="btn btn-outline btn-sm">💰 رصيدي</a><a href="{{ url_for('student_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a><a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a></div></div>
-    <div class="nav-bar">
-        <a href="{{ url_for('student_dashboard') }}">📊 الرئيسية</a>
-        <a href="{{ url_for('student_homework') }}">📚 واجباتي</a>
-        <a href="{{ url_for('student_report') }}">📊 تقريري</a>
-        <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
-        <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
-        <a href="{{ url_for('student_gamification') }}" class="active">🎮 نقاطي وشاراتي</a>
-        <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
-        <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-        <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
-        <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
-    </div>
-    <div class="points-display">
-        <div class="big-number">{{ student.points|default(0, true) }}</div>
-        <div class="label">⭐ نقاطي</div>
-        <div class="sub">{{ earned_badges|length }} شارة مفتوحة من {{ all_badges|length }}</div>
-        <div class="next-level">
-            <div style="display:flex;justify-content:space-between;font-size:13px;"><span>المستوى {{ current_level|default(1) }}</span><span>{{ next_level_points|default(100) }} نقطة للمستوى التالي</span></div>
-            <div class="progress-bar"><div class="fill" style="width: {{ progress_percent|default(0, true) }}%;"></div></div>
-        </div>
-    </div>
-    <div class="badges-section">
-        <div class="section-header"><h3>🏅 شاراتي</h3><span style="font-size:13px;color:var(--text-muted);">{{ earned_badges|length }}/{{ all_badges|length }} مفتوحة</span></div>
-        <div class="badges-grid">
-            {% for badge in all_badges %}
-            <div class="badge-item {% if badge.id in earned_badge_ids %}earned{% else %}locked{% endif %}">
-                <span class="icon">{{ badge.icon }}</span>
-                <div class="name">{{ badge.name }}</div>
-                <div class="desc">{{ badge.description }}</div>
-                {% if badge.id not in earned_badge_ids %}<span class="lock-icon">🔒</span>{% else %}<span style="font-size:12px;color:var(--success);">✅ مفتوحة</span>{% endif %}
-            </div>
-            {% endfor %}
-        </div>
-    </div>
-    <div class="tips-section">
-        <h3>💡 كيف تكسب النقاط والشارات؟</h3>
-        <div class="tips-grid">
-            <div class="tip-item"><span class="icon">📊</span><div class="info"><div class="title">التقييم اليومي</div><div class="desc">احصل على درجات عالية في التقييم</div></div></div>
-            <div class="tip-item"><span class="icon">📚</span><div class="info"><div class="title">تسليم الواجبات</div><div class="desc">سلم الواجبات في الوقت المحدد</div></div></div>
-            <div class="tip-item"><span class="icon">🏆</span><div class="info"><div class="title">المسابقات</div><div class="desc">شارك وافز في المسابقات</div></div></div>
-            <div class="tip-item"><span class="icon">🔥</span><div class="info"><div class="title">الاستمرارية</div><div class="desc">حافظ على حضورك اليومي</div></div></div>
-            <div class="tip-item"><span class="icon">⚔️</span><div class="info"><div class="title">التحديات</div><div class="desc">تحدى زملاءك واربح النقاط</div></div></div>
-            <div class="tip-item"><span class="icon">⭐</span><div class="info"><div class="title">التميز</div><div class="desc">كن من الأوائل في الصدارة</div></div></div>
-        </div>
-    </div>
-</div>
-<div class="toast" id="toast"><div class="title" id="toastTitle">✅ تم</div><div class="message" id="toastMessage">تم تنفيذ العملية بنجاح</div></div>
-<script>
-function showToast(type, title, message) {
-    const toast = document.getElementById('toast');
-    toast.className = 'toast show ' + type;
-    document.getElementById('toastTitle').textContent = title;
-    document.getElementById('toastMessage').textContent = message;
-    clearTimeout(toast._timeout);
-    toast._timeout = setTimeout(() => { toast.classList.remove('show'); }, 4000);
-}
-console.log('🎮 نقاطي وشاراتي جاهزة');
-console.log('🏅 عدد الشارات: ' + ({{ earned_badges|length }} || 0) + '/' + ({{ all_badges|length }} || 0));
-</script>
 </body>
 </html>
 '''
@@ -22188,7 +21936,6 @@ STUDENT_MESSAGES_HTML = '''
             <a href="{{ url_for('student_report') }}">📊 تقريري</a>
             <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
             <a href="{{ url_for('student_messages') }}" class="active">💬 رسائلي</a>
-            <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
@@ -23136,7 +22883,6 @@ STUDENT_POINTS_HTML = '''
         <a href="{{ url_for('student_report') }}">📊 تقريري</a>
         <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
         <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
-        <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
@@ -23453,7 +23199,6 @@ STUDENT_LEVEL_HTML = '''
         <a href="{{ url_for('student_report') }}">📊 تقريري</a>
         <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
         <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
-        <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}" class="active">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
@@ -24381,7 +24126,6 @@ STUDENT_STORE_HTML = '''
             <a href="{{ url_for('student_report') }}">📊 تقريري</a>
             <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
-            <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
@@ -25384,7 +25128,6 @@ STUDENT_DUELS_HTML = '''
             <a href="{{ url_for('student_report') }}">📊 تقريري</a>
             <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
-            <a href="{{ url_for('student_gamification') }}">🎮 نقاطي وشاراتي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
@@ -27766,30 +27509,6 @@ def register_student_competition(comp_id):
     if register_student_for_competition(student['id'], comp_id):
         return jsonify({'success': True, 'message': 'تم التسجيل في المسابقة بنجاح'})
     return jsonify({'success': False, 'message': 'حدث خطأ في التسجيل'})
-@app.route('/student/gamification')
-@login_required('student')
-def student_gamification():
-    """نقاط وشارات الطالب"""
-    student = get_current_user()
-    badges = get_badges_with_status(student['id'])
-    earned_badges = [b for b in badges if b['earned']]
-    earned_ids = [b['id'] for b in earned_badges]
-    
-    # حساب مستوى الطالب
-    points = student['points'] or 0
-    current_level = points // 100 + 1
-    next_level_points = (current_level * 100)
-    progress_percent = (points % 100) if points > 0 else 0
-    
-    return render_template_string(STUDENT_GAMIFICATION_HTML,
-                                   student=student,
-                                   all_badges=badges,
-                                   earned_badges=earned_badges,
-                                   earned_badge_ids=earned_ids,
-                                   current_level=current_level,
-                                   next_level_points=next_level_points,
-                                   progress_percent=progress_percent,
-                                   datetime=datetime)
 @app.route('/student/points')
 @login_required('student')
 def student_points():
