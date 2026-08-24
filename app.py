@@ -25571,27 +25571,58 @@ def student_assistant():
         flash('ليس لديك صلاحية الوصول كمساعد', 'danger')
         return redirect(url_for('student_dashboard'))
 
-    # جلب الإجراءات
-    actions = query_all(
-        "SELECT * FROM assistant_actions WHERE assistant_id = %s ORDER BY created_at DESC LIMIT 50",
+    # بناء assistant_info من بيانات المساعد + الطالب
+    assistant_info = dict(assistant)
+    assistant_info['name'] = student.get('name', '')
+    assistant_info['email'] = student.get('email', '')
+
+    # XP formatting
+    granted = assistant.get('granted_at')
+    assistant_info['granted_at'] = granted.strftime('%Y-%m-%d %H:%M:%S') if granted and hasattr(granted, 'strftime') else (granted or '')
+
+    # الصلاحيات
+    perms = assistant.get('permissions', '')
+    perms = [p.strip() for p in perms.split(',') if p.strip()] if perms else []
+
+    # المهام (assistant_actions)
+    tasks = query_all(
+        "SELECT id, action_type as title, description, created_at as status FROM assistant_actions WHERE assistant_id = %s ORDER BY created_at DESC LIMIT 20",
         (assistant['id'],)
     )
+    if not tasks:
+        tasks = []
 
-    # XP
-    xp_points = assistant.get('xp_points', 0)
-    xp_due = assistant.get('xp_due_date')
-    xp_due_str = xp_due.strftime('%Y-%m-%d') if xp_due and hasattr(xp_due, 'strftime') else ''
-    last_xp = assistant.get('last_xp_granted')
-    last_xp_str = last_xp.strftime('%Y-%m-%d %H:%M:%S') if last_xp and hasattr(last_xp, 'strftime') else ''
+    # إحصائيات
+    stats = query_one(
+        "SELECT COUNT(*) as completed_tasks FROM assistant_actions WHERE assistant_id = %s",
+        (assistant['id'],)
+    )
+    if not stats:
+        stats = {'completed_tasks': 0}
+
+    # المسابقات النشطة
+    active_competitions = query_all(
+        "SELECT * FROM competitions WHERE active = 1 ORDER BY date DESC LIMIT 5"
+    )
+    if not active_competitions:
+        active_competitions = []
+
+    # التقييمات الأخيرة (فارغة إذا لم يكن الجدول موجوداً)
+    recent_evaluations = []
+
+    # تاريخ XP
+    xp_history = []
 
     return render_template_string(
         ASSISTANT_DASHBOARD_HTML,
         student=student,
-        assistant=assistant,
-        actions=actions,
-        xp_points=xp_points,
-        xp_due_date=xp_due_str,
-        last_xp_granted=last_xp_str,
+        assistant_info=assistant_info,
+        perms=perms,
+        tasks=tasks,
+        stats=stats,
+        active_competitions=active_competitions,
+        recent_evaluations=recent_evaluations,
+        xp_history=xp_history,
         today=get_today(),
         datetime=datetime
     )
