@@ -834,7 +834,8 @@ def compute_juz_count(memorized_surah_ids):
     return completed, completed_list
 
 def toggle_student_surah(student_id, surah_number, memorized):
-    """يسجّل/يلغي تسجيل سورة كمحفوظة لدى الطالب، ثم يعيد تقييم شارات المستوى"""
+    """يسجّل/يلغي تسجيل سورة كمحفوظة (رسمياً) لدى الطالب. هذه هي الدالة التي
+    تُستخدم من طرف المشرف لتثبيت السور فعلياً، أو عند تأكيد المشرف لطلب طالب"""
     if memorized:
         execute_query(
             "INSERT INTO student_surahs (student_id, surah_number) VALUES (?, ?) ON CONFLICT DO NOTHING RETURNING student_id",
@@ -845,6 +846,64 @@ def toggle_student_surah(student_id, surah_number, memorized):
             "DELETE FROM student_surahs WHERE student_id = ? AND surah_number = ?",
             (student_id, surah_number)
         )
+
+def get_student_pending_surahs(student_id):
+    """السور التي طلب الطالب اعتبارها محفوظة (أو غير محفوظة) وما زالت
+    بانتظار مصادقة المشرف. تُعاد كقاموس {رقم السورة: memorized(bool)}"""
+    rows = query_all(
+        "SELECT surah_number, memorized FROM student_surah_pending WHERE student_id = ?",
+        (student_id,)
+    )
+    return {r['surah_number']: bool(r['memorized']) for r in rows}
+
+def submit_student_surah_selection(student_id, selected_surah_numbers):
+    """يستقبل من الطالب مجموعة أرقام السور التي حددها كمحفوظة (تحديد كامل,
+    وليس تبديل سورة واحدة)، ويحسب الفرق مقارنة بالحالة الرسمية المؤكدة من
+    طرف المشرف، ثم يسجّل هذا الفرق كطلبات بانتظار المصادقة، دون أن يمسّ
+    الجدول الرسمي student_surahs مباشرة"""
+    selected = set(int(s) for s in selected_surah_numbers)
+    confirmed = get_student_memorized_surahs(student_id)
+    # نحذف أي طلب معلّق سابق للطالب، ثم نعيد بناءه من التحديد الجديد
+    execute_query("DELETE FROM student_surah_pending WHERE student_id = ?", (student_id,))
+    for surah_number in range(1, 115):
+        is_selected = surah_number in selected
+        is_confirmed = surah_number in confirmed
+        if is_selected != is_confirmed:
+            # فرق عن الحالة المؤكدة => يحتاج مصادقة المشرف
+            execute_query(
+                "INSERT INTO student_surah_pending (student_id, surah_number, memorized) VALUES (?, ?, ?) "
+                "ON CONFLICT (student_id, surah_number) DO UPDATE SET memorized = EXCLUDED.memorized, requested_at = CURRENT_TIMESTAMP",
+                (student_id, surah_number, 1 if is_selected else 0)
+            )
+
+def confirm_pending_surah(student_id, surah_number):
+    """يصادق المشرف على طلب سورة معلّقة: يثبتها في الجدول الرسمي ويحذف الطلب"""
+    pending = query_one(
+        "SELECT memorized FROM student_surah_pending WHERE student_id = ? AND surah_number = ?",
+        (student_id, surah_number)
+    )
+    if not pending:
+        return False
+    toggle_student_surah(student_id, surah_number, bool(pending['memorized']))
+    execute_query(
+        "DELETE FROM student_surah_pending WHERE student_id = ? AND surah_number = ?",
+        (student_id, surah_number)
+    )
+    return True
+
+def confirm_all_pending_surahs(student_id):
+    """يصادق المشرف على كل الطلبات المعلّقة لطالب معيّن دفعة واحدة"""
+    pending = get_student_pending_surahs(student_id)
+    for surah_number, memorized in pending.items():
+        toggle_student_surah(student_id, surah_number, memorized)
+    execute_query("DELETE FROM student_surah_pending WHERE student_id = ?", (student_id,))
+
+def reject_pending_surah(student_id, surah_number):
+    """يرفض المشرف طلب سورة معلّقة: يُحذف الطلب دون أي تأثير على الحالة الرسمية"""
+    execute_query(
+        "DELETE FROM student_surah_pending WHERE student_id = ? AND surah_number = ?",
+        (student_id, surah_number)
+    )
 
 def get_hifz_progress(student_id):
     """عدد الأجزاء المحفوظة: يُحسب أولاً وبدقّة من قائمة السور التي أقرّ الطالب
@@ -2219,6 +2278,18 @@ def init_db():
     )
     """)
     
+    # جدول طلبات السور المحفوظة بانتظار مصادقة المشرف: الطالب يرسل تحديده،
+    # ولا تُحتسب السورة كمحفوظة رسمياً (في student_surahs) إلا بعد تأكيد المشرف
+    cur.execute("""
+    CREATE TABLE IF NOT EXISTS student_surah_pending (
+        student_id INTEGER NOT NULL REFERENCES students(id) ON DELETE CASCADE,
+        surah_number INTEGER NOT NULL,
+        memorized INTEGER NOT NULL DEFAULT 1,
+        requested_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        PRIMARY KEY (student_id, surah_number)
+    )
+    """)
+    
     # جدول حركات النقاط
     cur.execute("""
     CREATE TABLE IF NOT EXISTS points_transactions (
@@ -2595,7 +2666,14 @@ def init_db():
         'sessions': [('student_id', 'INTEGER REFERENCES students(id) ON DELETE CASCADE')],
         'students': [('last_monthly_xp', 'VARCHAR(7)'), ('level', 'INTEGER DEFAULT 1'), ('theme_mode', "VARCHAR(10) DEFAULT 'dark'")],
         'competitions': [('rewarded', 'INTEGER DEFAULT 0')],
-        'assistants': [('xp_due_date', 'DATE')],
+        'assistants': [
+            ('xp_due_date', 'DATE'),
+            ('xp_points', 'INTEGER DEFAULT 0'),
+            ('last_xp_granted', 'TIMESTAMP'),
+            ('active', 'INTEGER DEFAULT 1'),
+            ('granted_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP'),
+            ('permissions', "TEXT DEFAULT ''"),
+        ],
     }
     for table_name, columns in migrations.items():
         cur.execute(
@@ -2803,6 +2881,14 @@ ADMIN_STUDENT_MEMORIZATION_HTML = '''
         .breakdown .stat { background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 10px; padding: 10px 4px; }
         .breakdown .stat .n { font-size: 20px; font-weight: 800; color: var(--gold-light); }
         .breakdown .stat .l { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+        .pending-panel { background: rgba(251,191,36,0.08); border: 1px solid rgba(251,191,36,0.3); border-radius: 14px; padding: 16px 18px; margin-bottom: 16px; }
+        .pending-panel h3 { font-size: 15px; color: var(--warning); margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px; }
+        .pending-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid rgba(255,255,255,0.06); font-size: 13px; }
+        .pending-row:last-child { border-bottom: none; }
+        .pending-row .actions { display: flex; gap: 6px; }
+        .btn-xs { padding: 4px 10px; font-size: 11px; }
+        .btn-success { background: var(--success); color: #0a2a1a; }
+        .btn-danger { background: var(--danger); color: #fff; }
     </style>
 </head>
 <body>
@@ -2812,6 +2898,25 @@ ADMIN_STUDENT_MEMORIZATION_HTML = '''
         <h1>📖 سور {{ student.name }} المحفوظة</h1>
         <a href="{{ url_for('admin_view_student', student_id=student.id) }}" class="btn btn-outline">⬅ ملف الطالب</a>
     </div>
+    {% if pending_list %}
+    <div class="pending-panel" id="pendingPanel">
+        <h3>
+            <span>⏳ طلبات بانتظار المصادقة ({{ pending_list|length }})</span>
+            <button type="button" class="btn btn-success btn-xs" onclick="confirmAllPending()">✅ تأكيد الكل</button>
+        </h3>
+        <div id="pendingRows">
+            {% for p in pending_list %}
+            <div class="pending-row" data-surah="{{ p.number }}">
+                <span>{{ '➕' if p.memorized else '➖' }} سورة {{ p.name }} {{ '(يطلب إضافتها)' if p.memorized else '(يطلب إزالتها)' }}</span>
+                <span class="actions">
+                    <button type="button" class="btn btn-success btn-xs" onclick="handlePending({{ p.number }}, 'confirm')">✅ تأكيد</button>
+                    <button type="button" class="btn btn-danger btn-xs" onclick="handlePending({{ p.number }}, 'reject')">🚫 رفض</button>
+                </span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
     <div class="summary">
         <div class="num" id="juzCount">{{ juz_count }}</div>
         <div class="lbl">من 30 جزءاً محفوظاً</div>
@@ -2883,6 +2988,44 @@ function selectAll(memorized) {
         if (data.ok) {
             document.querySelectorAll('.surah-row input[type=checkbox]').forEach(cb => cb.checked = memorized);
             updateSummary(data.juz_count, data.completed_juz, data.breakdown);
+        }
+    });
+}
+function handlePending(surahNumber, action) {
+    fetch("{{ url_for('admin_student_memorization_pending_action', student_id=student.id, surah_number=0) }}".replace('/0', '/' + surahNumber), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({action: action})
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            updateSummary(data.juz_count, data.completed_juz, data.breakdown);
+            const row = document.querySelector('.pending-row[data-surah="' + surahNumber + '"]');
+            if (row) row.remove();
+            if (action === 'confirm') {
+                const cb = document.querySelector('.surah-row input[data-surah="' + surahNumber + '"]');
+                if (cb) cb.checked = true;
+            }
+            if (!document.querySelectorAll('.pending-row').length) {
+                const panel = document.getElementById('pendingPanel');
+                if (panel) panel.remove();
+            }
+        }
+    });
+}
+function confirmAllPending() {
+    if (!confirm('هل تريد تأكيد كل الطلبات المعلّقة؟')) return;
+    fetch("{{ url_for('admin_student_memorization_confirm_all', student_id=student.id) }}", {
+        method: 'POST'
+    }).then(r => r.json()).then(data => {
+        if (data.ok) {
+            updateSummary(data.juz_count, data.completed_juz, data.breakdown);
+            const panel = document.getElementById('pendingPanel');
+            if (panel) panel.remove();
+            document.querySelectorAll('.pending-row').forEach(function(row) {
+                const surah = row.dataset.surah;
+                const cb = document.querySelector('.surah-row input[data-surah="' + surah + '"]');
+                if (cb) cb.checked = true;
+            });
         }
     });
 }
@@ -23034,21 +23177,36 @@ STUDENT_MEMORIZATION_HTML = '''
         .breakdown .stat { background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 10px; padding: 10px 4px; }
         .breakdown .stat .n { font-size: 20px; font-weight: 800; color: var(--gold-light); }
         .breakdown .stat .l { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+        .bulk-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
+        .btn-gold { background: linear-gradient(135deg, var(--gold-light), var(--gold)); color: #16211f; }
+        .pending-banner { background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.35); color: var(--warning); border-radius: 12px; padding: 10px 16px; font-size: 13px; text-align: center; margin-bottom: 16px; }
+        .pending-tag { font-size: 10px; background: rgba(251,191,36,0.18); color: var(--warning); padding: 2px 8px; border-radius: 10px; margin-right: 6px; }
+        .save-bar { position: sticky; bottom: 0; background: var(--primary-dark); border-top: 1px solid var(--glass-border); padding: 12px 0; margin-top: 18px; display: flex; justify-content: center; gap: 10px; }
+        .save-bar .btn { padding: 10px 26px; font-size: 14px; }
+        .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-140%); background: #16211f; border: 1px solid var(--glass-border); border-radius: 10px; padding: 10px 18px; font-size: 13px; z-index: 9999; transition: transform 0.3s ease; }
+        .toast.show { transform: translateX(-50%) translateY(0); }
     </style>
 </head>
 <body>
     {{ theme_style(student)|safe }}
 <div class="container">
     <div class="header"><h1>📖 سوري المحفوظة</h1><a href="{{ url_for('student_level') }}" class="btn btn-outline">⬅ مستواي</a></div>
+    {% if pending_count and pending_count > 0 %}
+    <div class="pending-banner">⏳ عندك {{ pending_count }} سورة بانتظار مصادقة المشرف، ما تتحسبش فعدد الأجزاء حتى يأكدها</div>
+    {% endif %}
     <div class="summary">
         <div class="num" id="juzCount">{{ juz_count }}</div>
-        <div class="lbl">من 30 جزءاً محفوظاً</div>
+        <div class="lbl">من 30 جزءاً محفوظاً (مؤكد من المشرف)</div>
         <div class="progress-bar"><div class="fill" id="juzFill" style="width: {{ (juz_count / 30 * 100) }}%;"></div></div>
         <div class="breakdown">
             <div class="stat"><div class="n" id="hizbsCount">{{ breakdown.hizbs }}</div><div class="l">حزباً / 60</div></div>
             <div class="stat"><div class="n" id="halvesCount">{{ breakdown.halves }}</div><div class="l">نصف حزب / 120</div></div>
             <div class="stat"><div class="n" id="quartersCount">{{ breakdown.quarters }}</div><div class="l">ربع حزب / 240</div></div>
             <div class="stat"><div class="n" id="juzCount2">{{ juz_count }}</div><div class="l">جزءاً / 30</div></div>
+        </div>
+        <div class="bulk-actions">
+            <button type="button" class="btn btn-gold" onclick="selectAll(true)">✅ تحديد الكل</button>
+            <button type="button" class="btn btn-outline" onclick="selectAll(false)">🗑️ إلغاء تحديد الكل</button>
         </div>
     </div>
     {% for j in juz_list %}
@@ -23061,8 +23219,9 @@ STUDENT_MEMORIZATION_HTML = '''
             {% for s in j.surahs %}
             <div class="surah-row">
                 <label>
-                    <input type="checkbox" data-surah="{{ s.number }}" {% if s.memorized %}checked{% endif %} onchange="toggleSurah(this)">
+                    <input type="checkbox" class="surah-checkbox" data-surah="{{ s.number }}" {% if s.checked %}checked{% endif %}>
                     سورة {{ s.name }}
+                    {% if s.pending %}<span class="pending-tag">⏳ بانتظار المصادقة</span>{% endif %}
                 </label>
             </div>
             {% endfor %}
@@ -23070,30 +23229,36 @@ STUDENT_MEMORIZATION_HTML = '''
     </div>
     {% endfor %}
 </div>
+<div class="save-bar">
+    <button type="button" class="btn btn-gold" onclick="saveSelection()">💾 حفظ وإرسال للمشرف</button>
+</div>
+<div class="toast" id="toast"></div>
 <script>
-function toggleSurah(cb) {
-    const surah = cb.dataset.surah;
-    fetch("{{ url_for('student_memorization_toggle') }}", {
+function selectAll(checked) {
+    document.querySelectorAll('.surah-checkbox').forEach(function(cb) { cb.checked = checked; });
+}
+function showToast(msg) {
+    const toast = document.getElementById('toast');
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toast._t);
+    toast._t = setTimeout(function() { toast.classList.remove('show'); }, 3000);
+}
+function saveSelection() {
+    const selected = Array.from(document.querySelectorAll('.surah-checkbox:checked')).map(function(cb) { return cb.dataset.surah; });
+    fetch("{{ url_for('student_memorization_submit') }}", {
         method: 'POST',
         headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({surah_number: surah, memorized: cb.checked})
+        body: JSON.stringify({surah_numbers: selected})
     }).then(r => r.json()).then(data => {
         if (data.ok) {
-            document.getElementById('juzCount').textContent = data.juz_count;
-            document.getElementById('juzFill').style.width = (data.juz_count / 30 * 100) + '%';
-            if (data.breakdown) {
-                document.getElementById('hizbsCount').textContent = data.breakdown.hizbs;
-                document.getElementById('halvesCount').textContent = data.breakdown.halves;
-                document.getElementById('quartersCount').textContent = data.breakdown.quarters;
-                document.getElementById('juzCount2').textContent = data.breakdown.juz;
-            }
-            document.querySelectorAll('[id^="juzTag"]').forEach(tag => {
-                const jn = parseInt(tag.id.replace('juzTag', ''));
-                const done = data.completed_juz.includes(jn);
-                tag.textContent = done ? '✅ مكتمل' : 'غير مكتمل';
-                tag.className = 'tag ' + (done ? 'done' : 'pending');
-            });
+            showToast('✅ ' + data.message);
+            setTimeout(function() { location.reload(); }, 900);
+        } else {
+            showToast('❌ ' + (data.message || 'حدث خطأ'));
         }
+    }).catch(function() {
+        showToast('❌ تعذر الاتصال بالخادم');
     });
 }
 </script>
@@ -26721,6 +26886,7 @@ def admin_student_memorization(student_id):
         return redirect(url_for('manage_students'))
     student = dict(student)
     memorized_ids = get_student_memorized_surahs(student_id)
+    pending = get_student_pending_surahs(student_id)
     juz_count, completed_juz = compute_juz_count(memorized_ids)
     breakdown = compute_hifz_breakdown(memorized_ids)
     juz_list = []
@@ -26734,11 +26900,16 @@ def admin_student_memorization(student_id):
                 for s in surahs_in_juz
             ],
         })
+    pending_list = [
+        {'number': s, 'name': SURAH_NAMES[s - 1], 'memorized': mem}
+        for s, mem in sorted(pending.items())
+    ]
     return render_template_string(ADMIN_STUDENT_MEMORIZATION_HTML,
                                    student=student,
                                    juz_list=juz_list,
                                    juz_count=juz_count,
-                                   breakdown=breakdown)
+                                   breakdown=breakdown,
+                                   pending_list=pending_list)
 @app.route('/admin/student/<int:student_id>/memorization/toggle', methods=['POST'])
 @login_required(role='admin')
 def admin_student_memorization_toggle(student_id):
@@ -26777,6 +26948,39 @@ def admin_student_memorization_select_all(student_id):
     juz_count, completed_juz = compute_juz_count(memorized_ids)
     breakdown = compute_hifz_breakdown(memorized_ids)
     return jsonify({'ok': True, 'juz_count': juz_count, 'completed_juz': completed_juz, 'breakdown': breakdown})
+@app.route('/admin/student/<int:student_id>/memorization/pending/<int:surah_number>', methods=['POST'])
+@login_required(role='admin')
+def admin_student_memorization_pending_action(student_id, surah_number):
+    """يصادق المشرف على طلب سورة معلّقة أو يرفضه"""
+    student = get_student_by_id(student_id)
+    if not student:
+        return jsonify({'ok': False, 'message': 'الطالب غير موجود'}), 404
+    data = request.get_json(silent=True) or request.form
+    action = (data.get('action') or 'confirm').lower()
+    if action == 'reject':
+        reject_pending_surah(student_id, surah_number)
+    else:
+        if not confirm_pending_surah(student_id, surah_number):
+            return jsonify({'ok': False, 'message': 'لا يوجد طلب معلّق لهذه السورة'}), 404
+    memorized_ids = get_student_memorized_surahs(student_id)
+    juz_count, completed_juz = compute_juz_count(memorized_ids)
+    breakdown = compute_hifz_breakdown(memorized_ids)
+    pending = get_student_pending_surahs(student_id)
+    return jsonify({'ok': True, 'juz_count': juz_count, 'completed_juz': completed_juz,
+                     'breakdown': breakdown, 'pending_count': len(pending)})
+@app.route('/admin/student/<int:student_id>/memorization/pending/confirm_all', methods=['POST'])
+@login_required(role='admin')
+def admin_student_memorization_confirm_all(student_id):
+    """يصادق المشرف على كل الطلبات المعلّقة لطالب معيّن دفعة واحدة"""
+    student = get_student_by_id(student_id)
+    if not student:
+        return jsonify({'ok': False, 'message': 'الطالب غير موجود'}), 404
+    confirm_all_pending_surahs(student_id)
+    memorized_ids = get_student_memorized_surahs(student_id)
+    juz_count, completed_juz = compute_juz_count(memorized_ids)
+    breakdown = compute_hifz_breakdown(memorized_ids)
+    return jsonify({'ok': True, 'juz_count': juz_count, 'completed_juz': completed_juz,
+                     'breakdown': breakdown, 'pending_count': 0})
 
 @app.route('/admin/analytics')
 @login_required('admin')
@@ -27573,10 +27777,12 @@ def student_points_unhide():
 @app.route('/student/memorization')
 @login_required('student')
 def student_memorization():
-    """صفحة السور المحفوظة: يحدد الطالب السور التي حفظها، فيُحتسب عدد
-    الأجزاء ومستواه تلقائياً بناءً عليها"""
+    """صفحة السور المحفوظة: يحدد الطالب السور التي حفظها (تحديد محلي فقط)،
+    ثم يرسلها دفعة واحدة بزر الحفظ لتصبح 'بانتظار مصادقة المشرف'. لا تُحتسب
+    ضمن عدد الأجزاء والمستوى إلا بعد أن يصادق عليها المشرف من لوحته"""
     student = get_current_user()
     memorized_ids = get_student_memorized_surahs(student['id'])
+    pending = get_student_pending_surahs(student['id'])
     juz_count, completed_juz = compute_juz_count(memorized_ids)
     breakdown = compute_hifz_breakdown(memorized_ids)
     juz_list = []
@@ -27586,7 +27792,14 @@ def student_memorization():
             'number': j,
             'complete': j in completed_juz,
             'surahs': [
-                {'number': s, 'name': SURAH_NAMES[s - 1], 'memorized': s in memorized_ids}
+                {
+                    'number': s,
+                    'name': SURAH_NAMES[s - 1],
+                    'memorized': s in memorized_ids,
+                    # التحديد المعروض في الصندوق: يعكس الطلب المعلّق إن وُجد، وإلا الحالة المؤكدة
+                    'checked': pending[s] if s in pending else (s in memorized_ids),
+                    'pending': s in pending,
+                }
                 for s in surahs_in_juz
             ],
         })
@@ -27594,25 +27807,28 @@ def student_memorization():
                                    student=student,
                                    juz_list=juz_list,
                                    juz_count=juz_count,
-                                   breakdown=breakdown)
-@app.route('/student/memorization/toggle', methods=['POST'])
+                                   breakdown=breakdown,
+                                   pending_count=len(pending))
+@app.route('/student/memorization/submit', methods=['POST'])
 @login_required('student')
-def student_memorization_toggle():
-    """تبديل حالة سورة (محفوظة / غير محفوظة) للطالب الحالي عبر AJAX"""
+def student_memorization_submit():
+    """يستقبل تحديد الطالب الكامل للسور (بعد الضغط على زر حفظ)، ويحوّل أي
+    فرق عن الحالة الرسمية المؤكدة إلى طلبات بانتظار مصادقة المشرف"""
     student = get_current_user()
     data = request.get_json(silent=True) or request.form
+    raw_list = data.get('surah_numbers')
+    if raw_list is None:
+        raw_list = request.form.getlist('surah_numbers')
+    if isinstance(raw_list, str):
+        raw_list = [x for x in raw_list.split(',') if x.strip() != '']
     try:
-        surah_number = int(data.get('surah_number'))
+        selected = [int(x) for x in raw_list]
     except (TypeError, ValueError):
-        return jsonify({'ok': False, 'message': 'سورة غير صالحة'}), 400
-    if surah_number < 1 or surah_number > 114:
-        return jsonify({'ok': False, 'message': 'سورة غير صالحة'}), 400
-    memorized = str(data.get('memorized')).lower() in ('1', 'true', 'yes', 'on')
-    toggle_student_surah(student['id'], surah_number, memorized)
-    memorized_ids = get_student_memorized_surahs(student['id'])
-    juz_count, completed_juz = compute_juz_count(memorized_ids)
-    breakdown = compute_hifz_breakdown(memorized_ids)
-    return jsonify({'ok': True, 'juz_count': juz_count, 'completed_juz': completed_juz, 'breakdown': breakdown})
+        return jsonify({'ok': False, 'message': 'بيانات غير صالحة'}), 400
+    selected = [s for s in selected if 1 <= s <= 114]
+    submit_student_surah_selection(student['id'], selected)
+    pending = get_student_pending_surahs(student['id'])
+    return jsonify({'ok': True, 'message': 'تم إرسال التحديد، بانتظار مصادقة المشرف', 'pending_count': len(pending)})
 @app.route('/student/level')
 @login_required('student')
 def student_level():
