@@ -750,6 +750,72 @@ def _build_juz_surahs():
 
 JUZ_SURAHS = _build_juz_surahs()  # {juz_number: {surah_numbers...}}
 
+# بداية كل رُبع حزب (240 نقطة، مصدرها البيانات الرسمية لتقسيم المصحف) — تُستخدم
+# لاشتقاق تقسيمات الأرباع/أنصاف الأحزاب/الأحزاب تلقائياً بنفس منطق الأجزاء أعلاه.
+# نقطة 241 وهمية لتحديد نهاية الربع 240
+_QUARTER_STARTS = [
+    (1,1),(2,26),(2,44),(2,60),(2,75),(2,92),(2,106),(2,124),(2,142),(2,158),
+    (2,177),(2,189),(2,203),(2,219),(2,233),(2,243),(2,253),(2,263),(2,272),(2,283),
+    (3,15),(3,33),(3,52),(3,75),(3,93),(3,113),(3,133),(3,153),(3,171),(3,186),
+    (4,1),(4,12),(4,24),(4,36),(4,58),(4,74),(4,88),(4,100),(4,114),(4,135),
+    (4,148),(4,163),(5,1),(5,12),(5,27),(5,41),(5,51),(5,67),(5,82),(5,97),
+    (5,109),(6,13),(6,36),(6,59),(6,74),(6,95),(6,111),(6,127),(6,141),(6,151),
+    (7,1),(7,31),(7,47),(7,65),(7,88),(7,117),(7,142),(7,156),(7,171),(7,189),
+    (8,1),(8,22),(8,41),(8,61),(9,1),(9,19),(9,34),(9,46),(9,60),(9,75),
+    (9,93),(9,111),(9,122),(10,11),(10,26),(10,53),(10,71),(10,90),(11,6),(11,24),
+    (11,41),(11,61),(11,84),(11,108),(12,7),(12,30),(12,53),(12,77),(12,101),(13,5),
+    (13,19),(13,35),(14,10),(14,28),(15,1),(15,50),(16,1),(16,30),(16,51),(16,75),
+    (16,90),(16,111),(17,1),(17,23),(17,50),(17,70),(17,99),(18,17),(18,32),(18,51),
+    (18,75),(18,99),(19,22),(19,59),(20,1),(20,55),(20,83),(20,111),(21,1),(21,29),
+    (21,51),(21,83),(22,1),(22,19),(22,38),(22,60),(23,1),(23,36),(23,75),(24,1),
+    (24,21),(24,35),(24,53),(25,1),(25,21),(25,53),(26,1),(26,52),(26,111),(26,181),
+    (27,1),(27,27),(27,56),(27,82),(28,12),(28,29),(28,51),(28,76),(29,1),(29,26),
+    (29,46),(30,1),(30,31),(30,54),(31,22),(32,11),(33,1),(33,18),(33,31),(33,51),
+    (33,60),(34,10),(34,24),(34,46),(35,15),(35,41),(36,28),(36,60),(37,22),(37,83),
+    (37,145),(38,21),(38,52),(39,8),(39,32),(39,53),(40,1),(40,21),(40,41),(40,66),
+    (41,9),(41,25),(41,47),(42,13),(42,27),(42,51),(43,24),(43,57),(44,17),(45,12),
+    (46,1),(46,21),(47,10),(47,33),(48,18),(49,1),(49,14),(50,27),(51,31),(52,24),
+    (53,26),(54,9),(55,1),(56,1),(56,75),(57,16),(58,1),(58,14),(59,11),(60,7),
+    (62,1),(63,4),(65,1),(66,1),(67,1),(68,1),(69,1),(70,19),(72,1),(73,20),
+    (75,1),(76,19),(78,1),(80,1),(82,1),(84,1),(87,1),(90,1),(94,1),(100,9),
+    (115,1),
+]
+
+def _build_range_surahs(starts):
+    """يبني خريطة عامة {رقم الوحدة -> مجموعة أرقام السور التي تمر بها} انطلاقاً
+    من قائمة نقاط بداية (سورة، آية) بنفس منطق _build_juz_surahs أعلاه."""
+    mapping = {}
+    for i in range(len(starts) - 1):
+        start_surah, _ = starts[i]
+        next_surah, next_ayah = starts[i + 1]
+        end_surah = next_surah if next_ayah > 1 else next_surah - 1
+        mapping[i + 1] = set(range(start_surah, end_surah + 1))
+    return mapping
+
+QUARTER_SURAHS = _build_range_surahs(_QUARTER_STARTS)               # 240 ربع حزب
+HIZB_SURAHS = _build_range_surahs(_QUARTER_STARTS[0::4])            # 60 حزباً (كل حزب = 4 أرباع)
+NISF_HIZB_SURAHS = _build_range_surahs(_QUARTER_STARTS[0::2])       # 120 نصف حزب (كل نصف = ربعان)
+
+def _count_complete_units(memorized_surah_ids, surahs_map):
+    """يحسب عدد الوحدات المكتملة (ربع/نصف حزب/حزب) بنفس منطق اكتمال الجزء:
+    الوحدة تُحتسب فقط إذا كانت كل السور التي تمر بها محفوظة بالكامل."""
+    memorized_surah_ids = set(memorized_surah_ids)
+    return sum(1 for i in range(1, len(surahs_map) + 1) if surahs_map[i].issubset(memorized_surah_ids))
+
+def compute_hifz_breakdown(memorized_surah_ids):
+    """يحسب تلقائياً عدد الأرباع والأنصاف (أنصاف الأحزاب) والأحزاب والأجزاء
+    المكتملة لدى الطالب استناداً إلى قائمة السور التي أقرّ بحفظها. ملاحظة: تقسيم
+    الأثمان (ثمن الحزب) أدق من ذلك ويحتاج بيانات إضافية غير متوفرة حالياً، لذا
+    أدق وحدة مدعومة هنا هي ربع الحزب (240 ربعاً)."""
+    memorized_surah_ids = set(memorized_surah_ids)
+    juz_count, completed_juz = compute_juz_count(memorized_surah_ids)
+    return {
+        'quarters': _count_complete_units(memorized_surah_ids, QUARTER_SURAHS),
+        'halves': _count_complete_units(memorized_surah_ids, NISF_HIZB_SURAHS),
+        'hizbs': _count_complete_units(memorized_surah_ids, HIZB_SURAHS),
+        'juz': juz_count,
+    }
+
 def get_student_memorized_surahs(student_id):
     """أرقام السور التي سجّلها الطالب كمحفوظة"""
     rows = query_all("SELECT surah_number FROM student_surahs WHERE student_id = ?", (student_id,))
@@ -2733,6 +2799,10 @@ ADMIN_STUDENT_MEMORIZATION_HTML = '''
         .surah-row:last-child { border-bottom: none; }
         .surah-row input[type=checkbox] { width: 19px; height: 19px; cursor: pointer; accent-color: var(--gold); }
         .surah-row label { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1; }
+        .breakdown { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
+        .breakdown .stat { background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 10px; padding: 10px 4px; }
+        .breakdown .stat .n { font-size: 20px; font-weight: 800; color: var(--gold-light); }
+        .breakdown .stat .l { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
     </style>
 </head>
 <body>
@@ -2746,6 +2816,12 @@ ADMIN_STUDENT_MEMORIZATION_HTML = '''
         <div class="num" id="juzCount">{{ juz_count }}</div>
         <div class="lbl">من 30 جزءاً محفوظاً</div>
         <div class="progress-bar"><div class="fill" id="juzFill" style="width: {{ (juz_count / 30 * 100) }}%;"></div></div>
+        <div class="breakdown">
+            <div class="stat"><div class="n" id="hizbsCount">{{ breakdown.hizbs }}</div><div class="l">حزباً / 60</div></div>
+            <div class="stat"><div class="n" id="halvesCount">{{ breakdown.halves }}</div><div class="l">نصف حزب / 120</div></div>
+            <div class="stat"><div class="n" id="quartersCount">{{ breakdown.quarters }}</div><div class="l">ربع حزب / 240</div></div>
+            <div class="stat"><div class="n" id="juzCount2">{{ juz_count }}</div><div class="l">جزءاً / 30</div></div>
+        </div>
         <div class="actions">
             <button type="button" class="btn" onclick="selectAll(true)">✅ تحديد الكل</button>
             <button type="button" class="btn btn-outline" onclick="selectAll(false)">🗑️ إلغاء تحديد الكل</button>
@@ -2778,12 +2854,18 @@ function toggleSurah(cb) {
         headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({surah_number: surah, memorized: cb.checked})
     }).then(r => r.json()).then(data => {
-        if (data.ok) updateSummary(data.juz_count, data.completed_juz);
+        if (data.ok) updateSummary(data.juz_count, data.completed_juz, data.breakdown);
     });
 }
-function updateSummary(juzCount, completedJuz) {
+function updateSummary(juzCount, completedJuz, breakdown) {
     document.getElementById('juzCount').textContent = juzCount;
     document.getElementById('juzFill').style.width = (juzCount / 30 * 100) + '%';
+    if (breakdown) {
+        document.getElementById('hizbsCount').textContent = breakdown.hizbs;
+        document.getElementById('halvesCount').textContent = breakdown.halves;
+        document.getElementById('quartersCount').textContent = breakdown.quarters;
+        document.getElementById('juzCount2').textContent = breakdown.juz;
+    }
     document.querySelectorAll('[id^="juzTag"]').forEach(tag => {
         const jn = parseInt(tag.id.replace('juzTag', ''));
         const done = completedJuz.includes(jn);
@@ -2800,7 +2882,7 @@ function selectAll(memorized) {
     }).then(r => r.json()).then(data => {
         if (data.ok) {
             document.querySelectorAll('.surah-row input[type=checkbox]').forEach(cb => cb.checked = memorized);
-            updateSummary(data.juz_count, data.completed_juz);
+            updateSummary(data.juz_count, data.completed_juz, data.breakdown);
         }
     });
 }
@@ -23202,6 +23284,10 @@ STUDENT_MEMORIZATION_HTML = '''
         .surah-row:last-child { border-bottom: none; }
         .surah-row input[type=checkbox] { width: 19px; height: 19px; cursor: pointer; accent-color: var(--gold); }
         .surah-row label { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1; }
+        .breakdown { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
+        .breakdown .stat { background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 10px; padding: 10px 4px; }
+        .breakdown .stat .n { font-size: 20px; font-weight: 800; color: var(--gold-light); }
+        .breakdown .stat .l { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
     </style>
 </head>
 <body>
@@ -23212,6 +23298,12 @@ STUDENT_MEMORIZATION_HTML = '''
         <div class="num" id="juzCount">{{ juz_count }}</div>
         <div class="lbl">من 30 جزءاً محفوظاً</div>
         <div class="progress-bar"><div class="fill" id="juzFill" style="width: {{ (juz_count / 30 * 100) }}%;"></div></div>
+        <div class="breakdown">
+            <div class="stat"><div class="n" id="hizbsCount">{{ breakdown.hizbs }}</div><div class="l">حزباً / 60</div></div>
+            <div class="stat"><div class="n" id="halvesCount">{{ breakdown.halves }}</div><div class="l">نصف حزب / 120</div></div>
+            <div class="stat"><div class="n" id="quartersCount">{{ breakdown.quarters }}</div><div class="l">ربع حزب / 240</div></div>
+            <div class="stat"><div class="n" id="juzCount2">{{ juz_count }}</div><div class="l">جزءاً / 30</div></div>
+        </div>
     </div>
     {% for j in juz_list %}
     <div class="juz-card">
@@ -23243,6 +23335,12 @@ function toggleSurah(cb) {
         if (data.ok) {
             document.getElementById('juzCount').textContent = data.juz_count;
             document.getElementById('juzFill').style.width = (data.juz_count / 30 * 100) + '%';
+            if (data.breakdown) {
+                document.getElementById('hizbsCount').textContent = data.breakdown.hizbs;
+                document.getElementById('halvesCount').textContent = data.breakdown.halves;
+                document.getElementById('quartersCount').textContent = data.breakdown.quarters;
+                document.getElementById('juzCount2').textContent = data.breakdown.juz;
+            }
             document.querySelectorAll('[id^="juzTag"]').forEach(tag => {
                 const jn = parseInt(tag.id.replace('juzTag', ''));
                 const done = data.completed_juz.includes(jn);
@@ -26881,6 +26979,7 @@ def admin_student_memorization(student_id):
     student = dict(student)
     memorized_ids = get_student_memorized_surahs(student_id)
     juz_count, completed_juz = compute_juz_count(memorized_ids)
+    breakdown = compute_hifz_breakdown(memorized_ids)
     juz_list = []
     for j in range(1, 31):
         surahs_in_juz = sorted(JUZ_SURAHS[j])
@@ -26895,7 +26994,8 @@ def admin_student_memorization(student_id):
     return render_template_string(ADMIN_STUDENT_MEMORIZATION_HTML,
                                    student=student,
                                    juz_list=juz_list,
-                                   juz_count=juz_count)
+                                   juz_count=juz_count,
+                                   breakdown=breakdown)
 @app.route('/admin/student/<int:student_id>/memorization/toggle', methods=['POST'])
 @login_required(role='admin')
 def admin_student_memorization_toggle(student_id):
@@ -26914,7 +27014,8 @@ def admin_student_memorization_toggle(student_id):
     toggle_student_surah(student_id, surah_number, memorized)
     memorized_ids = get_student_memorized_surahs(student_id)
     juz_count, completed_juz = compute_juz_count(memorized_ids)
-    return jsonify({'ok': True, 'juz_count': juz_count, 'completed_juz': completed_juz})
+    breakdown = compute_hifz_breakdown(memorized_ids)
+    return jsonify({'ok': True, 'juz_count': juz_count, 'completed_juz': completed_juz, 'breakdown': breakdown})
 @app.route('/admin/student/<int:student_id>/memorization/select_all', methods=['POST'])
 @login_required(role='admin')
 def admin_student_memorization_select_all(student_id):
@@ -26931,7 +27032,8 @@ def admin_student_memorization_select_all(student_id):
         execute_query("DELETE FROM student_surahs WHERE student_id = ?", (student_id,))
     memorized_ids = get_student_memorized_surahs(student_id)
     juz_count, completed_juz = compute_juz_count(memorized_ids)
-    return jsonify({'ok': True, 'juz_count': juz_count, 'completed_juz': completed_juz})
+    breakdown = compute_hifz_breakdown(memorized_ids)
+    return jsonify({'ok': True, 'juz_count': juz_count, 'completed_juz': completed_juz, 'breakdown': breakdown})
 
 @app.route('/admin/analytics')
 @login_required('admin')
@@ -27757,6 +27859,7 @@ def student_memorization():
     student = get_current_user()
     memorized_ids = get_student_memorized_surahs(student['id'])
     juz_count, completed_juz = compute_juz_count(memorized_ids)
+    breakdown = compute_hifz_breakdown(memorized_ids)
     juz_list = []
     for j in range(1, 31):
         surahs_in_juz = sorted(JUZ_SURAHS[j])
@@ -27771,7 +27874,8 @@ def student_memorization():
     return render_template_string(STUDENT_MEMORIZATION_HTML,
                                    student=student,
                                    juz_list=juz_list,
-                                   juz_count=juz_count)
+                                   juz_count=juz_count,
+                                   breakdown=breakdown)
 @app.route('/student/memorization/toggle', methods=['POST'])
 @login_required('student')
 def student_memorization_toggle():
@@ -27788,7 +27892,8 @@ def student_memorization_toggle():
     toggle_student_surah(student['id'], surah_number, memorized)
     memorized_ids = get_student_memorized_surahs(student['id'])
     juz_count, completed_juz = compute_juz_count(memorized_ids)
-    return jsonify({'ok': True, 'juz_count': juz_count, 'completed_juz': completed_juz})
+    breakdown = compute_hifz_breakdown(memorized_ids)
+    return jsonify({'ok': True, 'juz_count': juz_count, 'completed_juz': completed_juz, 'breakdown': breakdown})
 @app.route('/student/level')
 @login_required('student')
 def student_level():
@@ -28466,6 +28571,24 @@ def grant_bonus_xp_once(email, amount, reason):
         print(f"⚠️ خطأ أثناء منح نقاط المكافأة: {e}")
 
 grant_bonus_xp_once('yacinezaoui2010@gmail.com', 1000000, 'منحة خاصة من الإدارة - مليون نقطة')
+
+def set_student_level_once(email, level):
+    """يضبط مستوى طالب محدد عبر بريده الإلكتروني (لا يُعيد الترقية للأسفل، ولا
+    يكرر التنفيذ عند إعادة تشغيل السيرفر إن كان الطالب في هذا المستوى أو أعلى)"""
+    try:
+        student = query_one("SELECT id, level FROM students WHERE email = ?", (email,))
+        if not student:
+            print(f"⚠️ لم يتم العثور على طالب بالبريد {email} لضبط المستوى")
+            return
+        current_level = student.get('level') or 1
+        if current_level >= level:
+            return  # الطالب في هذا المستوى أو أعلى بالفعل
+        execute_query("UPDATE students SET level = ? WHERE id = ?", (level, student['id']))
+        print(f"✅ تم ضبط مستوى الطالب {email} إلى {level} (طالب نخبة)")
+    except Exception as e:
+        print(f"⚠️ خطأ أثناء ضبط مستوى الطالب: {e}")
+
+set_student_level_once('yacinezaoui2010@gmail.com', 7)
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
