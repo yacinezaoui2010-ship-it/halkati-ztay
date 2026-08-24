@@ -16528,7 +16528,7 @@ STUDENT_DASHBOARD_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-        <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
+        <a href="{{ '#' }}">⚔️ تحدياتي</a>
         <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         {% if assistant_info %}<a href="{{ url_for('student_assistant') }}" style="color:var(--gold-light);">🧑‍🤝‍🧑 لوحة المساعد</a>{% endif %}
     </div>
@@ -17101,7 +17101,7 @@ STUDENT_PROFILE_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-        <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
+        <a href="{{ '#' }}">⚔️ تحدياتي</a>
         <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         <a href="{{ url_for('student_profile') }}" class="active">👤 ملفي</a>
     </div>
@@ -17821,7 +17821,7 @@ STUDENT_REPORT_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-            <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
+            <a href="{{ '#' }}">⚔️ تحدياتي</a>
             <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         </div>
 
@@ -19081,7 +19081,7 @@ STUDENT_HOMEWORK_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-            <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
+            <a href="{{ '#' }}">⚔️ تحدياتي</a>
             <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         </div>
 
@@ -20195,7 +20195,7 @@ STUDENT_COMPETITIONS_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-            <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
+            <a href="{{ '#' }}">⚔️ تحدياتي</a>
             <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         </div>
 
@@ -21281,7 +21281,7 @@ STUDENT_MESSAGES_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-            <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
+            <a href="{{ '#' }}">⚔️ تحدياتي</a>
             <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         </div>
 
@@ -22228,7 +22228,7 @@ STUDENT_POINTS_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
         <a href="{{ url_for('student_points') }}" class="active">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-        <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
+        <a href="{{ '#' }}">⚔️ تحدياتي</a>
         <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
     </div>
     <div class="balance-display">
@@ -22546,7 +22546,7 @@ STUDENT_LEVEL_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-        <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
+        <a href="{{ '#' }}">⚔️ تحدياتي</a>
         <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
     </div>
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -23473,7 +23473,7 @@ STUDENT_STORE_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}" class="active">🛍️ المتجر</a>
-            <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
+            <a href="{{ '#' }}">⚔️ تحدياتي</a>
             <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         </div>
 
@@ -24475,7 +24475,7 @@ STUDENT_DUELS_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-            <a href="{{ url_for('student_duels') }}" class="active">⚔️ تحدياتي</a>
+            <a href="{{ '#' }}" class="active">⚔️ تحدياتي</a>
             <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         </div>
 
