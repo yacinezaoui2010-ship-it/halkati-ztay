@@ -2719,7 +2719,7 @@ def init_db():
     conn.close()
     print("✅ قاعدة البيانات جاهزة!")
     
-ADMIN_VIEW_STUDENT_HTML = '''
+ADMIN_VIEW_STUDENT_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -2837,7 +2837,7 @@ ADMIN_VIEW_STUDENT_HTML = '''
 # ============================================================ #
 # ====== صفحة المسؤول: تحديد السور المحفوظة لطالب معيّن ======= #
 # ============================================================ #
-ADMIN_STUDENT_MEMORIZATION_HTML = '''
+ADMIN_STUDENT_MEMORIZATION_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -3037,7 +3037,7 @@ function confirmAllPending() {
 # ============================================================ #
 # ====== صفحة الإشعارات الكاملة (طالب/مشرف) =================== #
 # ============================================================ #
-NOTIFICATIONS_HTML = '''
+NOTIFICATIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -3109,7 +3109,7 @@ init_db()
 # ============================================================ #
 # ====== الصفحة 1: الصفحة الرئيسية (HOME) ==================== #
 # ============================================================ #
-HOME_HTML = '''
+HOME_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -3985,7 +3985,7 @@ HOME_HTML = '''
 # ============================================================ #
 # ====== الصفحة 4: لوحة الصدارة (LEADERBOARD) ================ #
 # ============================================================ #
-LEADERBOARD_HTML = '''
+LEADERBOARD_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -4480,7 +4480,7 @@ console.log('🏆 لوحة الصدارة جاهزة!');
 # ============================================================ #
 # ====== الصفحة 5: دخول المشرف (ADMIN_LOGIN) ================== #
 # ============================================================ #
-ADMIN_LOGIN_HTML = '''
+ADMIN_LOGIN_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -5572,7 +5572,7 @@ console.log('✨ ميزات: Multi-step, Validation, Password Strength, Avatar P
 # ============================================================ #
 # ====== الصفحة 8: لوحة تحكم المشرف (ADMIN_DASHBOARD) ========= #
 # ============================================================ #
-ADMIN_DASHBOARD_HTML = '''
+ADMIN_DASHBOARD_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -5986,7 +5986,7 @@ console.log('📊 المخططات: Chart.js, تحديث تلقائي كل 60 ث
 # ============================================================ #
 # ====== الصفحة 9: إدارة الطلاب (MANAGE_STUDENTS) ============= #
 # ============================================================ #
-MANAGE_STUDENTS_HTML = '''
+MANAGE_STUDENTS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -6400,7 +6400,7 @@ console.log('📊 ميزات: بحث متقدم، تصفية، إجراءات د
 # ============================================================ #
 # ====== الصفحة 10: طلبات التسجيل (REGISTRATION_REQUESTS) ===== #
 # ============================================================ #
-REGISTRATION_REQUESTS_HTML = '''
+REGISTRATION_REQUESTS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -8717,7 +8717,7 @@ EVALUATION_SESSIONS_HTML = r'''
 # ============================================================ #
 # ====== الصفحة 13: إدارة الواجبات (HOMEWORK) ================= #
 # ============================================================ #
-HOMEWORK_HTML = '''
+HOMEWORK_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -9188,7 +9188,7 @@ console.log('📌 أنواع: جماعي، فردي، مجموعة');
 # ============================================================ #
 # ====== الصفحة 14: إدارة المسابقات ودرجاتها (COMPETITIONS) ==== #
 # ============================================================ #
-COMPETITIONS_HTML = '''
+COMPETITIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -10703,7 +10703,7 @@ COMPETITIONS_HTML = '''
 # ============================================================ #
 # ====== الصفحة 15: التحليلات (ANALYTICS) ===================== #
 # ============================================================ #
-ANALYTICS_HTML = '''
+ANALYTICS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -10987,7 +10987,7 @@ console.log('📊 Charts: Performance, Distribution, Top Students');
 # ============================================================ #
 # ====== الصفحة 15ب: قائمة طلبات الترقية (ADMIN_PROMOTIONS) ==== #
 # ============================================================ #
-ADMIN_PROMOTIONS_HTML = '''
+ADMIN_PROMOTIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -11073,7 +11073,7 @@ ADMIN_PROMOTIONS_HTML = '''
 # ============================================================ #
 # ====== الصفحة 15ج: تفاصيل طلب ترقية (ADMIN_PROMOTION_DETAIL) = #
 # ============================================================ #
-ADMIN_PROMOTION_DETAIL_HTML = '''
+ADMIN_PROMOTION_DETAIL_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -11182,7 +11182,7 @@ ADMIN_PROMOTION_DETAIL_HTML = '''
 # ============================================================ #
 # ====== الصفحة 16: ملف المشرف (ADMIN_PROFILE) ================ #
 # ============================================================ #
-ADMIN_PROFILE_HTML = '''
+ADMIN_PROFILE_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -11449,7 +11449,7 @@ console.log('🔒 إعدادات الأمان: 2FA, Theme, Notifications, Report
 # ============================================================ #
 # ====== الصفحة 17: إدارة مساعدي المشرف (ASSISTANTS) ========== #
 # ============================================================ #
-ASSISTANTS_HTML = '''
+ASSISTANTS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -12550,7 +12550,7 @@ ASSISTANTS_HTML = '''
 # ============================================================ #
 # ====== الصفحة 18: رسائل المشرف (MESSAGES) =================== #
 # ============================================================ #
-MESSAGES_HTML = '''
+MESSAGES_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -14676,7 +14676,7 @@ MESSAGES_HTML = '''
 # ============================================================ #
 # ====== الصفحة 19: إدارة التحديات الفردية (ADMIN_DUELS) ====== #
 # ============================================================ #
-ADMIN_DUELS_HTML = '''
+ADMIN_DUELS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -14980,7 +14980,7 @@ console.log('📊 حالات: معلق، مقبول، مكتمل، مرفوض');
 # ============================================================ #
 # ====== الصفحة 21: متجر المشرف (ADMIN_STORE) ================= #
 # ============================================================ #
-ADMIN_STORE_HTML = '''
+ADMIN_STORE_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -16255,7 +16255,7 @@ ADMIN_STORE_HTML = '''
 # ============================================================ #
 # ====== الصفحة 22: لوحة الطالب (STUDENT_DASHBOARD) =========== #
 # ============================================================ #
-STUDENT_DASHBOARD_HTML = '''
+STUDENT_DASHBOARD_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -16667,7 +16667,7 @@ console.log('🎯 ميزات: إحصائيات، مخططات، مهام يوم�
 # ============================================================ #
 # ====== لوحة المساعد (ASSISTANT_DASHBOARD) ==================== #
 # ============================================================ #
-ASSISTANT_DASHBOARD_HTML = '''
+ASSISTANT_DASHBOARD_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -17716,7 +17716,7 @@ ASSISTANT_DASHBOARD_HTML = '''
 # ============================================================ #
 # ====== الصفحة 23: ملف الطالب (STUDENT_PROFILE) ============== #
 # ============================================================ #
-STUDENT_PROFILE_HTML = '''
+STUDENT_PROFILE_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -18005,7 +18005,7 @@ console.log('🏅 عرض الشارات: ' + ({{ badges|length }} || 0));
 # ============================================================ #
 # ====== الصفحة 24: تقريري المتطور (STUDENT_REPORT) =========== #
 # ============================================================ #
-STUDENT_REPORT_HTML = '''
+STUDENT_REPORT_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -19058,7 +19058,7 @@ STUDENT_REPORT_HTML = '''
 # ============================================================ #
 # ====== الصفحة 25+26: واجباتي وتسليمها (دمج) ================ #
 # ============================================================ #
-STUDENT_HOMEWORK_HTML = '''
+STUDENT_HOMEWORK_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -20395,7 +20395,7 @@ STUDENT_HOMEWORK_HTML = '''
 # ============================================================ #
 # ====== الصفحة 27: مسابقاتي (STUDENT_COMPETITIONS) =========== #
 # ============================================================ #
-STUDENT_COMPETITIONS_HTML = '''
+STUDENT_COMPETITIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -21304,7 +21304,7 @@ STUDENT_COMPETITIONS_HTML = '''
 # ============================================================ #
 # ====== الصفحة 29: رسائلي (STUDENT_MESSAGES) ================== #
 # ============================================================ #
-STUDENT_MESSAGES_HTML = '''
+STUDENT_MESSAGES_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -22827,7 +22827,7 @@ STUDENT_MESSAGES_HTML = '''
 # ============================================================ #
 # ====== الصفحة 30: رصيدي (STUDENT_POINTS) ==================== #
 # ============================================================ #
-STUDENT_POINTS_HTML = '''
+STUDENT_POINTS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -23245,7 +23245,8 @@ function saveSelection() {
 </script>
 </body>
 </html>
-STUDENT_LEVEL_HTML = '''
+'''
+STUDENT_LEVEL_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -23444,7 +23445,7 @@ STUDENT_LEVEL_HTML = '''
 # ============================================================ #
 # ====== الصفحة 30ج: طلبات التقييم الموكلة للطالب (PROMOTIONS) == #
 # ============================================================ #
-STUDENT_PROMOTIONS_HTML = '''
+STUDENT_PROMOTIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -23526,7 +23527,7 @@ STUDENT_PROMOTIONS_HTML = '''
 # ============================================================ #
 # ====== الصفحة 31: متجر الطالب (STUDENT_STORE) ================ #
 # ============================================================ #
-STUDENT_STORE_HTML = '''
+STUDENT_STORE_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -24733,7 +24734,7 @@ STUDENT_STORE_HTML = '''
 # ============================================================ #
 # ====== الصفحة 32: تحدياتي الفردية (STUDENT_DUELS) =========== #
 # ============================================================ #
-STUDENT_DUELS_HTML = '''
+STUDENT_DUELS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
