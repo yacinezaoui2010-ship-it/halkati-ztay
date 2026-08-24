@@ -1957,6 +1957,12 @@ STORE_COLORS = [
 ]
 GRADIENT_PRICE = 500
 
+def get_student_points(student_id):
+    """جلب نقاط الطالب"""
+    result = query_one("SELECT points FROM students WHERE id = %s", (student_id,))
+    return result['points'] if result else 0
+
+
 def get_owned_color_ids(student):
     """قائمة معرّفات الألوان التي يملكها الطالب (اللون الافتراضي مملوك دائماً)"""
     owned = (student.get('owned_theme_colors') or '') if student else ''
@@ -26706,6 +26712,21 @@ def student_toggle_theme_mode():
     current_mode = (student.get('theme_mode') or 'dark')
     new_mode = 'light' if current_mode == 'dark' else 'dark'
     execute_query("UPDATE students SET theme_mode = ? WHERE id = ?", (new_mode, student['id']))
+    return redirect(request.referrer or url_for('student_dashboard'))
+
+
+@app.route('/student/upload_avatar', methods=['POST'])
+@login_required('student')
+def student_upload_avatar():
+    """رفع صورة شخصية للطالب"""
+    student = get_current_user()
+    avatar_file = request.files.get('avatar')
+    if avatar_file and avatar_file.filename:
+        avatar_url = save_uploaded_file(avatar_file, 'avatars')
+        execute_query("UPDATE students SET avatar_url = %s WHERE id = %s", (avatar_url, student['id']))
+        flash('تم تحديث الصورة الشخصية', 'success')
+    else:
+        flash('لم يتم اختيار ملف', 'warning')
     return redirect(request.referrer or url_for('student_dashboard'))
 @app.route('/student/profile', methods=['GET', 'POST'])
 @login_required('student')
