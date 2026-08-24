@@ -23134,7 +23134,6 @@ console.log('📊 إحصائيات: ' + ({{ earned|default(0, true) }} + ' مك�
 # ============================================================ #
 # ====== الصفحة 30ب: مستوى الطالب (STUDENT_LEVEL) =============== #
 # ============================================================ #
-STUDENT_MEMORIZATION_HTML = '''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
@@ -23157,81 +23156,61 @@ STUDENT_MEMORIZATION_HTML = '''
         .header h1 { font-size: 20px; font-weight: 800; }
         .btn { padding: 7px 16px; border: none; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
         .btn-outline { background: transparent; border: 1.5px solid var(--glass-border); color: var(--text-secondary); }
+        .btn-gold { background: linear-gradient(135deg, var(--gold-light), var(--gold)); color: #16211f; }
         .summary { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 16px; padding: 22px; text-align: center; margin-bottom: 18px; }
         .summary .num { font-size: 40px; font-weight: 900; background: linear-gradient(135deg, var(--gold-light), var(--gold)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
         .summary .lbl { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
         .progress-bar { width: 100%; height: 10px; background: rgba(255,255,255,0.08); border-radius: 20px; overflow: hidden; margin-top: 12px; }
         .progress-bar .fill { height: 100%; background: linear-gradient(90deg, var(--gold), var(--gold-light)); border-radius: 20px; transition: width 0.4s ease; }
-        .juz-card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 12px; margin-bottom: 10px; overflow: hidden; }
-        .juz-head { display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; cursor: pointer; }
-        .juz-head .title { font-weight: 700; font-size: 14px; }
-        .juz-head .tag { font-size: 11px; padding: 3px 10px; border-radius: 20px; font-weight: 700; }
-        .juz-head .tag.done { background: rgba(74,222,128,0.15); color: var(--success); }
-        .juz-head .tag.pending { background: rgba(251,191,36,0.15); color: var(--warning); }
-        .juz-body { display: none; padding: 4px 16px 14px; }
-        .juz-body.open { display: block; }
-        .surah-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 4px; border-bottom: 1px solid var(--glass-border); font-size: 13px; }
-        .surah-row:last-child { border-bottom: none; }
-        .surah-row input[type=checkbox] { width: 19px; height: 19px; cursor: pointer; accent-color: var(--gold); }
-        .surah-row label { display: flex; align-items: center; gap: 10px; cursor: pointer; flex: 1; }
-        .breakdown { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-top: 16px; }
-        .breakdown .stat { background: rgba(255,255,255,0.04); border: 1px solid var(--glass-border); border-radius: 10px; padding: 10px 4px; }
-        .breakdown .stat .n { font-size: 20px; font-weight: 800; color: var(--gold-light); }
-        .breakdown .stat .l { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
-        .bulk-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin-top: 14px; }
-        .btn-gold { background: linear-gradient(135deg, var(--gold-light), var(--gold)); color: #16211f; }
-        .pending-banner { background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.35); color: var(--warning); border-radius: 12px; padding: 10px 16px; font-size: 13px; text-align: center; margin-bottom: 16px; }
-        .pending-tag { font-size: 10px; background: rgba(251,191,36,0.18); color: var(--warning); padding: 2px 8px; border-radius: 10px; margin-right: 6px; }
+        .surah-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; margin-top: 16px; }
+        .surah-item { display: flex; align-items: center; gap: 8px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 10px; padding: 8px 12px; }
+        .surah-item input[type="checkbox"] { width: 18px; height: 18px; accent-color: var(--gold); cursor: pointer; }
+        .surah-item .surah-name { font-size: 14px; }
+        .surah-item .pending-tag { font-size: 10px; background: rgba(251,191,36,0.18); color: var(--warning); padding: 2px 8px; border-radius: 10px; margin-right: 4px; }
+        .bulk-actions { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; margin: 16px 0; }
         .save-bar { position: sticky; bottom: 0; background: var(--primary-dark); border-top: 1px solid var(--glass-border); padding: 12px 0; margin-top: 18px; display: flex; justify-content: center; gap: 10px; }
         .save-bar .btn { padding: 10px 26px; font-size: 14px; }
         .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-140%); background: #16211f; border: 1px solid var(--glass-border); border-radius: 10px; padding: 10px 18px; font-size: 13px; z-index: 9999; transition: transform 0.3s ease; }
         .toast.show { transform: translateX(-50%) translateY(0); }
+        .pending-banner { background: rgba(251,191,36,0.12); border: 1px solid rgba(251,191,36,0.35); color: var(--warning); border-radius: 12px; padding: 10px 16px; font-size: 13px; text-align: center; margin-bottom: 16px; }
+        @media (max-width: 600px) { .surah-grid { grid-template-columns: 1fr 1fr; } }
     </style>
 </head>
 <body>
     {{ theme_style(student)|safe }}
 <div class="container">
     <div class="header"><h1>📖 سوري المحفوظة</h1><a href="{{ url_for('student_level') }}" class="btn btn-outline">⬅ مستواي</a></div>
-    {% if pending_count and pending_count > 0 %}
-    <div class="pending-banner">⏳ عندك {{ pending_count }} سورة بانتظار مصادقة المشرف، ما تتحسبش فعدد الأجزاء حتى يأكدها</div>
+
+    {% if pending_count > 0 %}
+    <div class="pending-banner">⏳ عندك {{ pending_count }} سورة بانتظار مصادقة المشرف، لا تُحسب حتى يتم تأكيدها</div>
     {% endif %}
+
     <div class="summary">
-        <div class="num" id="juzCount">{{ juz_count }}</div>
-        <div class="lbl">من 30 جزءاً محفوظاً (مؤكد من المشرف)</div>
-        <div class="progress-bar"><div class="fill" id="juzFill" style="width: {{ (juz_count / 30 * 100) }}%;"></div></div>
-        <div class="breakdown">
-            <div class="stat"><div class="n" id="hizbsCount">{{ breakdown.hizbs }}</div><div class="l">حزباً / 60</div></div>
-            <div class="stat"><div class="n" id="halvesCount">{{ breakdown.halves }}</div><div class="l">نصف حزب / 120</div></div>
-            <div class="stat"><div class="n" id="quartersCount">{{ breakdown.quarters }}</div><div class="l">ربع حزب / 240</div></div>
-            <div class="stat"><div class="n" id="juzCount2">{{ juz_count }}</div><div class="l">جزءاً / 30</div></div>
-        </div>
-        <div class="bulk-actions">
-            <button type="button" class="btn btn-gold" onclick="selectAll(true)">✅ تحديد الكل</button>
-            <button type="button" class="btn btn-outline" onclick="selectAll(false)">🗑️ إلغاء تحديد الكل</button>
-        </div>
+        <div class="num">{{ memorized_count }}</div>
+        <div class="lbl">سورة محفوظة (مؤكدة من المشرف)</div>
+        <div class="progress-bar"><div class="fill" style="width: {{ (memorized_count / 114 * 100) }}%;"></div></div>
+        <div style="margin-top: 8px; font-size: 13px; color: var(--text-muted);">من 114 سورة</div>
+        <div style="margin-top: 4px; font-size: 12px; color: var(--gold-light);">📊 الأجزاء المكتملة: {{ juz_count }} من 30</div>
     </div>
-    {% for j in juz_list %}
-    <div class="juz-card">
-        <div class="juz-head" onclick="this.nextElementSibling.classList.toggle('open')">
-            <span class="title">📗 الجزء {{ j.number }}</span>
-            <span class="tag {{ 'done' if j.complete else 'pending' }}" id="juzTag{{ j.number }}">{{ '✅ مكتمل' if j.complete else 'غير مكتمل' }}</span>
-        </div>
-        <div class="juz-body">
-            {% for s in j.surahs %}
-            <div class="surah-row">
-                <label>
-                    <input type="checkbox" class="surah-checkbox" data-surah="{{ s.number }}" {% if s.checked %}checked{% endif %}>
-                    سورة {{ s.name }}
-                    {% if s.pending %}<span class="pending-tag">⏳ بانتظار المصادقة</span>{% endif %}
-                </label>
-            </div>
-            {% endfor %}
-        </div>
+
+    <div class="bulk-actions">
+        <button type="button" class="btn btn-gold" onclick="selectAll(true)">✅ تحديد الكل</button>
+        <button type="button" class="btn btn-outline" onclick="selectAll(false)">🗑️ إلغاء تحديد الكل</button>
     </div>
-    {% endfor %}
-</div>
-<div class="save-bar">
-    <button type="button" class="btn btn-gold" onclick="saveSelection()">💾 حفظ وإرسال للمشرف</button>
+
+    <div class="surah-grid">
+        {% for surah in surah_list %}
+        <div class="surah-item">
+            <input type="checkbox" class="surah-checkbox" data-surah="{{ surah.number }}" {% if surah.checked %}checked{% endif %}>
+            <span class="surah-name">سورة {{ surah.name }}</span>
+            {% if surah.pending %}<span class="pending-tag">⏳ معلق</span>{% endif %}
+        </div>
+        {% endfor %}
+    </div>
+
+    <div class="save-bar">
+        <button type="button" class="btn btn-gold" onclick="saveSelection()">💾 حفظ وإرسال للمشرف</button>
+    </div>
 </div>
 <div class="toast" id="toast"></div>
 <script>
@@ -23265,7 +23244,6 @@ function saveSelection() {
 </script>
 </body>
 </html>
-'''
 STUDENT_LEVEL_HTML = '''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
@@ -27778,51 +27756,44 @@ def student_points_unhide():
 @app.route('/student/memorization')
 @login_required('student')
 def student_memorization():
-    """صفحة السور المحفوظة: يحدد الطالب السور التي حفظها (تحديد محلي فقط)،
-    ثم يرسلها دفعة واحدة بزر الحفظ لتصبح 'بانتظار مصادقة المشرف'. لا تُحتسب
-    ضمن عدد الأجزاء والمستوى إلا بعد أن يصادق عليها المشرف من لوحته"""
+    """صفحة السور المحفوظة: يعرض جميع السور مع مربعات اختيار،
+    ويحدد الطالب السور التي يحفظها، ثم يرسل التحديد للمشرف."""
     student = get_current_user()
     student_id = student['id']
 
-    # ✅ استعلام واحد يجلب السور المحفوظة والمعلقة دفعة واحدة
+    # استعلام واحد يجلب السور المحفوظة والمعلقة دفعة واحدة
     rows = query_all("""
         SELECT surah_number, 1 as memorized FROM student_surahs WHERE student_id = %s
         UNION ALL
         SELECT surah_number, 0 as memorized FROM student_surah_pending WHERE student_id = %s
     """, (student_id, student_id))
 
-    # بناء المجموعات من نتيجة الاستعلام
+    # بناء مجموعات الحالة
     memorized_ids = {row['surah_number'] for row in rows if row['memorized'] == 1}
-    pending = {row['surah_number'] for row in rows if row['memorized'] == 0}
+    pending_ids = {row['surah_number'] for row in rows if row['memorized'] == 0}
 
-    # حساب الأجزاء المكتملة
-    juz_count, completed_juz = compute_juz_count(memorized_ids)
-    breakdown = compute_hifz_breakdown(memorized_ids)
-
-    juz_list = []
-    for j in range(1, 31):
-        surahs_in_juz = sorted(JUZ_SURAHS[j])
-        juz_list.append({
-            'number': j,
-            'complete': j in completed_juz,
-            'surahs': [
-                {
-                    'number': s,
-                    'name': SURAH_NAMES[s - 1],
-                    'memorized': s in memorized_ids,
-                    'checked': (s in pending) or (s in memorized_ids),
-                    'pending': s in pending,
-                }
-                for s in surahs_in_juz
-            ],
+    # بناء قائمة السور
+    surah_list = []
+    for i, name in enumerate(SURAH_NAMES, start=1):
+        surah_list.append({
+            'number': i,
+            'name': name,
+            'memorized': i in memorized_ids,
+            'pending': i in pending_ids,
+            'checked': (i in pending_ids) or (i in memorized_ids),  # للمربع
         })
 
-    return render_template_string(STUDENT_MEMORIZATION_HTML,
-                                   student=student,
-                                   juz_list=juz_list,
-                                   juz_count=juz_count,
-                                   breakdown=breakdown,
-                                   pending_count=len(pending))
+    # حساب عدد الأجزاء المكتملة (للعرض في مكان آخر، لكننا لن نعرضها هنا)
+    juz_count, _ = compute_juz_count(memorized_ids)
+
+    return render_template_string(
+        STUDENT_MEMORIZATION_HTML,
+        student=student,
+        surah_list=surah_list,
+        memorized_count=len(memorized_ids),
+        pending_count=len(pending_ids),
+        juz_count=juz_count  # اختياري لعرضه كإحصائية
+    )
 @app.route('/student/memorization/submit', methods=['POST'])
 @login_required('student')
 def student_memorization_submit():
