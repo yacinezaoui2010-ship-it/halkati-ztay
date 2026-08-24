@@ -135,7 +135,12 @@ os.makedirs(os.path.join(UPLOAD_FOLDER, 'homework'), exist_ok=True)
 # ============================================================ #
 def get_db():
     """الحصول على اتصال بقاعدة البيانات (PostgreSQL عبر psycopg2)"""
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
+    conn = psycopg2.connect(
+        DATABASE_URL,
+        cursor_factory=psycopg2.extras.RealDictCursor,
+        connect_timeout=10,
+        options='-c statement_timeout=30000'
+    )
     return conn
 
 def _pg_sql(sql):
@@ -2723,7 +2728,7 @@ ADMIN_VIEW_STUDENT_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ملف الطالب - {{ student.name }}</title>
@@ -2762,7 +2767,7 @@ ADMIN_VIEW_STUDENT_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="container">
     <div class="header">
         <h1>👤 ملف الطالب</h1>
@@ -2841,7 +2846,7 @@ ADMIN_STUDENT_MEMORIZATION_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>سور {{ student.name }} المحفوظة - إدارة</title>
@@ -2893,7 +2898,7 @@ ADMIN_STUDENT_MEMORIZATION_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="container">
     <div class="header">
         <h1>📖 سور {{ student.name }} المحفوظة</h1>
@@ -3041,7 +3046,7 @@ NOTIFICATIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>الإشعارات - حلقتي زتاي</title>
@@ -3072,7 +3077,7 @@ NOTIFICATIONS_HTML = r'''
 </head>
 <body>
     {% if student %}{{ theme_style(student)|safe }}{% endif %}
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="container">
     <div class="header">
         <h1>🔔 الإشعارات</h1>
@@ -3113,7 +3118,7 @@ HOME_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>حلقتي زتاي - نظام إدارة الحلقة القرآنية الذكي</title>
@@ -3753,7 +3758,7 @@ HOME_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
     <div class="bg-layer"><div class="bg-pattern"></div></div>
     <div class="orb orb-1"></div>
     <div class="orb orb-2"></div>
@@ -3989,7 +3994,7 @@ LEADERBOARD_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>لوحة الصدارة - أفضل الطلاب</title>
@@ -4277,7 +4282,7 @@ LEADERBOARD_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"><div class="bg-pattern"></div></div>
 <div class="container">
     <div class="header">
@@ -4484,7 +4489,7 @@ ADMIN_LOGIN_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>دخول المشرف - حلقتي زتاي</title>
@@ -4647,7 +4652,7 @@ ADMIN_LOGIN_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"><div class="bg-pattern"></div></div>
 <div class="orb orb-1"></div>
 <div class="orb orb-2"></div>
@@ -4784,7 +4789,7 @@ STUDENT_LOGIN_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>دخول الطالب - حلقتي زتاي</title>
@@ -4953,7 +4958,7 @@ STUDENT_LOGIN_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"><div class="bg-pattern"></div></div>
 <div class="orb orb-1"></div>
 <div class="orb orb-2"></div>
@@ -5085,7 +5090,7 @@ STUDENT_REGISTER_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تسجيل طالب جديد - حلقتي زتاي</title>
@@ -5264,7 +5269,7 @@ STUDENT_REGISTER_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"><div class="bg-pattern"></div></div>
 <div class="register-container">
     <div class="register-header">
@@ -5576,7 +5581,7 @@ ADMIN_DASHBOARD_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>لوحة تحكم المشرف - حلقتي زتاي</title>
@@ -5765,7 +5770,7 @@ ADMIN_DASHBOARD_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header">
@@ -5990,7 +5995,7 @@ MANAGE_STUDENTS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>إدارة الطلاب - حلقتي زتاي</title>
@@ -6188,7 +6193,7 @@ MANAGE_STUDENTS_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"></div>
 <div class="container">
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -6404,7 +6409,7 @@ REGISTRATION_REQUESTS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>طلبات التسجيل - حلقتي زتاي</title>
@@ -6622,7 +6627,7 @@ REGISTRATION_REQUESTS_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header">
@@ -6818,7 +6823,7 @@ EVALUATION_SESSIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>التقييم وسجل الحصص - حلقتي زتاي</title>
@@ -7800,7 +7805,7 @@ EVALUATION_SESSIONS_HTML = r'''
 </head>
 
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
     <!-- ==========================================
     طبقة الخلفية
     ========================================== -->
@@ -8721,7 +8726,7 @@ HOMEWORK_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>إدارة الواجبات - حلقتي زتاي</title>
@@ -8984,7 +8989,7 @@ HOMEWORK_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header">
@@ -9192,7 +9197,7 @@ COMPETITIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>المسابقات - حلقتي زتاي</title>
@@ -10023,7 +10028,7 @@ COMPETITIONS_HTML = r'''
 </head>
 
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -10707,7 +10712,7 @@ ANALYTICS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>التحليلات - حلقتي زتاي</title>
@@ -10855,7 +10860,7 @@ ANALYTICS_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header"><h1>📈 <span class="highlight">التحليلات</span></h1><div class="actions"><button class="btn btn-outline btn-sm" onclick="exportReport()">📥 تصدير التقرير</button><button class="btn btn-outline btn-sm" onclick="refreshData()">🔄 تحديث</button><a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a></div></div>
@@ -10991,7 +10996,7 @@ ADMIN_PROMOTIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>طلبات الترقية - لوحة التحكم</title>
@@ -11077,7 +11082,7 @@ ADMIN_PROMOTION_DETAIL_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تفاصيل طلب الترقية - لوحة التحكم</title>
@@ -11186,7 +11191,7 @@ ADMIN_PROFILE_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ملف المشرف - حلقتي زتاي</title>
@@ -11355,7 +11360,7 @@ ADMIN_PROFILE_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header"><h1>👤 <span class="highlight">ملف المشرف</span></h1><div class="actions"><a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a><a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a></div></div>
@@ -11453,7 +11458,7 @@ ASSISTANTS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>إدارة مساعدي المشرف - حلقتي زتاي</title>
@@ -11991,7 +11996,7 @@ ASSISTANTS_HTML = r'''
 </head>
 
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -12554,7 +12559,7 @@ MESSAGES_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>رسائل المشرف - حلقتي زتاي</title>
@@ -13603,7 +13608,7 @@ MESSAGES_HTML = r'''
 </head>
 
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -14680,7 +14685,7 @@ ADMIN_DUELS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>إدارة التحديات الفردية - حلقتي زتاي</title>
@@ -14857,7 +14862,7 @@ ADMIN_DUELS_HTML = r'''
     </style>
 </head>
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header">
@@ -14984,7 +14989,7 @@ ADMIN_STORE_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>متجر المشرف - حلقتي زتاي</title>
@@ -15724,7 +15729,7 @@ ADMIN_STORE_HTML = r'''
 </head>
 
 <body>
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -16259,7 +16264,7 @@ STUDENT_DASHBOARD_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>لوحة الطالب - حلقتي زتاي</title>
@@ -16474,7 +16479,7 @@ STUDENT_DASHBOARD_HTML = r'''
 </head>
 <body>
     {{ theme_style(student)|safe }}
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header">
@@ -16671,7 +16676,7 @@ ASSISTANT_DASHBOARD_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>لوحة المساعد - حلقتي زتاي</title>
@@ -17293,7 +17298,7 @@ ASSISTANT_DASHBOARD_HTML = r'''
 
 <body>
     {{ theme_style(student)|safe }}
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -17720,7 +17725,7 @@ STUDENT_PROFILE_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ملفي الشخصي - حلقتي زتاي</title>
@@ -17890,7 +17895,7 @@ STUDENT_PROFILE_HTML = r'''
 </head>
 <body>
     {{ theme_style(student)|safe }}
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header"><h1>👤 <span class="highlight">ملفي الشخصي</span></h1><div class="actions"><a href="{{ url_for('student_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a><a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a></div></div>
@@ -18009,7 +18014,7 @@ STUDENT_REPORT_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تقريري - حلقتي زتاي</title>
@@ -18599,7 +18604,7 @@ STUDENT_REPORT_HTML = r'''
 
 <body>
     {{ theme_style(student)|safe }}
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -19062,7 +19067,7 @@ STUDENT_HOMEWORK_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>واجباتي - حلقتي زتاي</title>
@@ -19860,7 +19865,7 @@ STUDENT_HOMEWORK_HTML = r'''
 
 <body>
     {{ theme_style(student)|safe }}
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -20399,7 +20404,7 @@ STUDENT_COMPETITIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>مسابقاتي - حلقتي زتاي</title>
@@ -20974,7 +20979,7 @@ STUDENT_COMPETITIONS_HTML = r'''
 
 <body>
     {{ theme_style(student)|safe }}
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -21308,7 +21313,7 @@ STUDENT_MESSAGES_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>رسائلي - حلقتي زتاي</title>
@@ -22053,7 +22058,7 @@ STUDENT_MESSAGES_HTML = r'''
 
 <body>
     {{ theme_style(student)|safe }}
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -22831,7 +22836,7 @@ STUDENT_POINTS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>رصيدي - حلقتي زتاي</title>
@@ -23017,7 +23022,7 @@ STUDENT_POINTS_HTML = r'''
 </head>
 <body>
     {{ theme_style(student)|safe }}
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header"><h1>💰 <span class="highlight">رصيدي</span></h1><div class="actions"><button class="btn btn-outline btn-sm" onclick="exportTransactions()">📥 تصدير</button><a href="{{ url_for('student_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a><a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a></div></div>
@@ -23138,7 +23143,7 @@ STUDENT_MEMORIZATION_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>سوري المحفوظة - حلقتي زتاي</title>
@@ -23250,7 +23255,7 @@ STUDENT_LEVEL_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>مستواي - حلقتي زتاي</title>
@@ -23335,7 +23340,7 @@ STUDENT_LEVEL_HTML = r'''
 </head>
 <body>
     {{ theme_style(student)|safe }}
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header"><h1>🎖️ <span class="highlight">مستواي</span></h1><div class="actions"><a href="{{ url_for('student_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a><a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a></div></div>
@@ -23449,7 +23454,7 @@ STUDENT_PROMOTIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>طلبات التقييم - حلقتي زتاي</title>
@@ -23531,7 +23536,7 @@ STUDENT_STORE_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>متجر الطالب - حلقتي زتاي</title>
@@ -24247,7 +24252,7 @@ STUDENT_STORE_HTML = r'''
 
 <body>
     {{ theme_style(student)|safe }}
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -24738,7 +24743,7 @@ STUDENT_DUELS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تحدياتي الفردية - حلقتي زتاي</title>
@@ -25254,7 +25259,7 @@ STUDENT_DUELS_HTML = r'''
 
 <body>
     {{ theme_style(student)|safe }}
-    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
     <div class="bg-layer"></div>
     <div class="container">
 
