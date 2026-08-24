@@ -34,62 +34,93 @@ def shade_hex(hex_color, factor):
     except Exception:
         return hex_color
 
-def build_theme_style(user):
-    """يبني كتلة CSS كاملة (:root overrides + body background) بناءً على لون/تدرج المستخدم المفعّل،
-    بالإضافة إلى تجاوزات الوضع الفاتح (إن كان مفعّلاً) وزر تبديل الوضع العائم"""
-    if not user:
+def lighten_hex(hex_color, amount):
+    """يمزج لون HEX نحو الأبيض بنسبة amount (0..1) لإنتاج تدرّج فاتح (للوضع النهاري)"""
+    try:
+        h = (hex_color or '').lstrip('#')
+        if len(h) == 3:
+            h = ''.join(c * 2 for c in h)
+        r, g, b = (int(h[i:i+2], 16) for i in (0, 2, 4))
+        r, g, b = (max(0, min(255, int(c + (255 - c) * amount))) for c in (r, g, b))
+        return '#%02x%02x%02x' % (r, g, b)
+    except Exception:
+        return hex_color
+
+def readable_text_color(hex_color):
+    """يحدد لون نص مناسب (أبيض/أسود) حسب سطوع اللون المُعطى"""
+    try:
+        h = (hex_color or '').lstrip('#')
+        if len(h) == 3:
+            h = ''.join(c * 2 for c in h)
+        r, g, b = (int(h[i:i+2], 16) for i in (0, 2, 4))
+        luma = (0.299 * r + 0.587 * g + 0.114 * b)
+        return '#132229' if luma > 150 else '#f4f7f9'
+    except Exception:
+        return '#f4f7f9'
+
+def build_theme_style(student):
+    """يبني كتلة CSS كاملة (:root overrides) بناءً على لون/تدرج الطالب المفعّل،
+    بحيث يصبح اللون المفعّل هو لون الخلفية الكامل للواجهة (وليس فقط الحواف/الأرقام/الكتابة)،
+    مع دعم كل من الوضع الداكن والوضع النهاري، بالإضافة إلى زر تبديل الوضع العائم"""
+    if not student:
         return ''
     css_parts = []
-    body_bg_dark = ''
-    body_bg_light = ''
-    tc = user.get('theme_color') if hasattr(user, 'get') else None
+    tc = student.get('theme_color') if hasattr(student, 'get') else None
+    mode = (student.get('theme_mode') if hasattr(student, 'get') else None) or 'dark'
+
     if tc:
         if tc.startswith('grad:'):
             try:
-                hexes = tc[5:].split(',')
-                if len(hexes) >= 2:
-                    gold = hexes[0]
-                    gold_light = hexes[-1]
-                    primary_stops = ', '.join([shade_hex(h, 0.5) for h in hexes])
-                    primary = f'linear-gradient(135deg, {primary_stops})'
-                    primary_light_stops = ', '.join([shade_hex(h, 0.7) for h in hexes])
-                    primary_light = f'linear-gradient(135deg, {primary_light_stops})'
-                    primary_dark_stops = ', '.join([shade_hex(h, 0.22) for h in hexes])
-                    primary_dark = f'linear-gradient(135deg, {primary_dark_stops})'
-                    gold_glow = hexes[0] + '26'
-                    bg_stops_dark = ', '.join([f'{h}18' for h in hexes])
-                    bg_stops_light = ', '.join([f'{h}10' for h in hexes])
-                    body_bg_dark = f'linear-gradient(135deg, {bg_stops_dark}), #0d1a3f'
-                    body_bg_light = f'linear-gradient(135deg, {bg_stops_light}), #eef2f4'
-                    css_parts.append(
-                        ':root{'
-                        f'--gold:{gold} !important;--gold-light:{gold_light} !important;--gold-glow:{gold_glow} !important;'
-                        f'--primary:{primary} !important;--primary-light:{primary_light} !important;--primary-dark:{primary_dark} !important;'
-                        '}'
-                    )
+                c1, c2 = tc[5:].split(',')
+                gold, gold_light = c1, c2
+                gold_glow = c1 + '26'
+                if mode == 'light':
+                    # الخلفية تصبح تدرّج فاتح (باستيل) من نفس اللونين المفعّلين
+                    bg1, bg2 = lighten_hex(c1, 0.72), lighten_hex(c2, 0.72)
+                    primary_dark = f'linear-gradient(135deg, {bg1}, {bg2})'
+                    primary = f'linear-gradient(135deg, {shade_hex(c1, 0.8)}, {shade_hex(c2, 0.8)})'
+                    primary_light = f'linear-gradient(135deg, {shade_hex(c1, 0.95)}, {shade_hex(c2, 0.95)})'
+                    txt = readable_text_color(bg1)
+                else:
+                    # الخلفية تصبح تدرّج داكن لكن باللون الحقيقي المفعّل نفسه (وليس أسود مغسول)
+                    primary_dark = f'linear-gradient(135deg, {shade_hex(c1, 0.55)}, {shade_hex(c2, 0.55)})'
+                    primary = f'linear-gradient(135deg, {shade_hex(c1, 0.7)}, {shade_hex(c2, 0.7)})'
+                    primary_light = f'linear-gradient(135deg, {shade_hex(c1, 0.85)}, {shade_hex(c2, 0.85)})'
+                    txt = readable_text_color(shade_hex(c1, 0.55))
+                css_parts.append(
+                    ':root{'
+                    f'--gold:{gold} !important;--gold-light:{gold_light} !important;--gold-glow:{gold_glow} !important;'
+                    f'--primary:{primary} !important;--primary-light:{primary_light} !important;--primary-dark:{primary_dark} !important;'
+                    f'--text-primary:{txt} !important;'
+                    '}'
+                )
             except Exception:
                 pass
         else:
             gold = tc
             gold_light = shade_hex(tc, 1.3)
-            primary = shade_hex(tc, 0.45)
-            primary_light = shade_hex(tc, 0.65)
-            primary_dark = shade_hex(tc, 0.22)
             gold_glow = tc + '26'
-            body_bg_dark = f'linear-gradient(135deg, {tc}18, {tc}08), #0d1a3f'
-            body_bg_light = f'linear-gradient(135deg, {tc}10, {tc}06), #eef2f4'
+            if mode == 'light':
+                primary_dark = lighten_hex(tc, 0.78)
+                primary = shade_hex(tc, 0.85)
+                primary_light = shade_hex(tc, 0.97)
+                txt = readable_text_color(primary_dark)
+            else:
+                primary_dark = shade_hex(tc, 0.55)
+                primary = shade_hex(tc, 0.7)
+                primary_light = shade_hex(tc, 0.85)
+                txt = readable_text_color(primary_dark)
             css_parts.append(
                 ':root{'
                 f'--gold:{gold} !important;--gold-light:{gold_light} !important;--gold-glow:{gold_glow} !important;'
                 f'--primary:{primary} !important;--primary-light:{primary_light} !important;--primary-dark:{primary_dark} !important;'
+                f'--text-primary:{txt} !important;'
                 '}'
             )
-        # خلفية الوضع المظلم
-        css_parts.append(f'body{{background:{body_bg_dark} !important;background-attachment:fixed !important;}}')
 
-    mode = (user.get('theme_mode') if hasattr(user, 'get') else None) or 'dark'
     toggle_html = ''
-    if mode == 'light':
+    if mode == 'light' and not tc:
+        # لا يوجد لون مفعّل: نطبّق فقط تجاوزات الوضع النهاري الافتراضية المحايدة
         css_parts.append(
             ':root{'
             '--primary-dark:#eef2f4 !important;--text-primary:#132229 !important;'
@@ -97,16 +128,16 @@ def build_theme_style(user):
             '--glass:rgba(19,34,41,0.045) !important;--glass-border:rgba(19,34,41,0.12) !important;'
             '}'
         )
-        # خلفية الوضع النهاري باللون المشترى
-        if body_bg_light:
-            css_parts.append(f'body{{background:{body_bg_light} !important;background-attachment:fixed !important;}}')
-        elif body_bg_dark:
-            css_parts.append(f'body{{background:{body_bg_dark.replace("#0d1a3f", "#eef2f4")} !important;background-attachment:fixed !important;}}')
+    elif mode == 'light':
+        css_parts.append(
+            ':root{'
+            '--text-secondary:rgba(19,34,41,0.75) !important;--text-muted:rgba(19,34,41,0.45) !important;'
+            '--glass:rgba(19,34,41,0.045) !important;--glass-border:rgba(19,34,41,0.12) !important;'
+            '}'
+        )
     toggle_icon = '☀️' if mode == 'light' else '🌙'
-    role = user.get('role', 'student') if hasattr(user, 'get') else 'student'
-    toggle_action = '/admin/toggle_theme_mode' if role == 'admin' else '/student/toggle_theme_mode'
     toggle_html = (
-        f'<form method="POST" action="{toggle_action}" '
+        '<form method="POST" action="/student/toggle_theme_mode" '
         'style="position:fixed;top:10px;left:60px;z-index:9999;">'
         f'<button type="submit" title="تبديل الوضع الفاتح/الداكن" '
         'style="width:36px;height:36px;border-radius:10px;border:1px solid rgba(255,255,255,0.2);'
@@ -156,11 +187,7 @@ os.makedirs(os.path.join(UPLOAD_FOLDER, 'homework'), exist_ok=True)
 # ============================================================ #
 def get_db():
     """الحصول على اتصال بقاعدة البيانات (PostgreSQL عبر psycopg2)"""
-    conn = psycopg2.connect(
-        DATABASE_URL,
-        cursor_factory=psycopg2.extras.RealDictCursor,
-        connect_timeout=10
-    )
+    conn = psycopg2.connect(DATABASE_URL, cursor_factory=psycopg2.extras.RealDictCursor)
     return conn
 
 def _pg_sql(sql):
@@ -255,9 +282,10 @@ def login_required(role=None):
                 flash('الرجاء تسجيل الدخول أولاً', 'danger')
                 return redirect(url_for('home'))
             if role and session.get('role') != role:
-                # التحقق من صلاحيات المساعد
-                if role == 'admin' and session.get('role') == 'assistant':
-                    # المساعد له صلاحيات محدودة
+                # التحقق من صلاحيات المساعد: المساعد هو طالب مُنح صلاحيات إضافية،
+                # لذا يبقى بإمكانه الوصول لصفحات الطالب دائماً، وصفحات المشرف
+                # حسب الصلاحية المحددة الممنوحة له (يُتحقق منها داخل كل صفحة عبر has_assistant_permission)
+                if session.get('role') == 'assistant' and role in ('admin', 'student'):
                     return f(*args, **kwargs)
                 flash('غير مصرح لك بالوصول إلى هذه الصفحة', 'danger')
                 return redirect(url_for('home'))
@@ -313,6 +341,13 @@ def has_assistant_permission(permission):
         return False
     perms = assistant['permissions'].split(',') if assistant['permissions'] else []
     return 'view_all' in perms or permission in perms
+def assistant_gate(permission):
+    """يمنع المساعد (وليس المشرف الحقيقي) من الوصول إلى صفحة مشرف لا يملك صلاحيتها.
+    تُستخدم في بداية صفحات المشرف التي قد يصل إليها مساعد عبر لوحته"""
+    if session.get('role') == 'assistant' and not has_assistant_permission(permission):
+        flash('ليس لديك صلاحية للوصول إلى هذه الصفحة', 'danger')
+        return redirect(url_for('student_assistant'))
+    return None
 def create_session(user_id, role, user_data=None):
     """إنشاء جلسة مستخدم"""
     session.clear()
@@ -1957,12 +1992,6 @@ STORE_COLORS = [
 ]
 GRADIENT_PRICE = 500
 
-def get_student_points(student_id):
-    """جلب نقاط الطالب"""
-    result = query_one("SELECT points FROM students WHERE id = %s", (student_id,))
-    return result['points'] if result else 0
-
-
 def get_owned_color_ids(student):
     """قائمة معرّفات الألوان التي يملكها الطالب (اللون الافتراضي مملوك دائماً)"""
     owned = (student.get('owned_theme_colors') or '') if student else ''
@@ -1976,8 +2005,8 @@ def get_owned_gradient_pairs(student):
     owned = (student.get('owned_theme_gradients') or '') if student else ''
     return [p.strip() for p in owned.split(',') if p.strip()]
 
-def buy_theme_color(student_id, color_id):
-    """شراء لون واجهة من المتجر وتفعيله مباشرة"""
+def buy_theme_color(student_id, color_id, free=False):
+    """شراء لون واجهة من المتجر وتفعيله مباشرة. free=True (للمساعدين/المشرفين) يتجاوز السعر ويُفعّل اللون مباشرة بالمجان"""
     color = next((c for c in STORE_COLORS if c['id'] == color_id), None)
     if not color:
         return False, 'اللون غير موجود'
@@ -1992,6 +2021,15 @@ def buy_theme_color(student_id, color_id):
         # يملكه مسبقاً: فقط نفعّله بدون خصم نقاط
         execute_query("UPDATE students SET theme_color = ? WHERE id = ?", (color['hex'], student_id))
         return True, 'تم تفعيل اللون'
+
+    if free:
+        # صلاحية المساعد/المشرف: تفعيل اللون مباشرة بالمجان دون خصم أي نقاط
+        owned_ids.append(color_id)
+        execute_query(
+            "UPDATE students SET theme_color = ?, owned_theme_colors = ? WHERE id = ?",
+            (color['hex'], ','.join(owned_ids), student_id)
+        )
+        return True, 'تم تفعيل اللون مجاناً'
 
     if student['points'] < color['price']:
         return False, 'نقاط غير كافية'
@@ -2137,14 +2175,16 @@ def get_unlocked_target_ids(viewer_id):
 def create_book_offer(data):
     """إنشاء عرض بيع كتاب من طالب"""
     return execute_query("""
-        INSERT INTO book_offers (student_id, title, author, description, price_points, status)
-        VALUES (?, ?, ?, ?, ?, 'pending')
+        INSERT INTO book_offers (student_id, title, author, description, price_points, cover_url, pdf_url, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
     """, (
         data['student_id'],
         data['title'],
         data.get('author', ''),
         data.get('description', ''),
-        data.get('price_points', 10)
+        data.get('price_points', 10),
+        data.get('cover_url'),
+        data.get('pdf_url')
     ))
 def get_pending_offers():
     """الحصول على عروض البيع المعلقة"""
@@ -2174,6 +2214,8 @@ def approve_offer(offer_id, final_price=None):
         'description': offer['description'],
         'price_points': final_price or offer['price_points'],
         'quantity': 1,
+        'cover_url': offer.get('cover_url'),
+        'pdf_url': offer.get('pdf_url'),
         'seller_student_id': offer['student_id'],
         'active': 1
     }
@@ -2754,7 +2796,7 @@ ADMIN_VIEW_STUDENT_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ملف الطالب - {{ student.name }}</title>
@@ -2793,7 +2835,7 @@ ADMIN_VIEW_STUDENT_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="container">
     <div class="header">
         <h1>👤 ملف الطالب</h1>
@@ -2872,7 +2914,7 @@ ADMIN_STUDENT_MEMORIZATION_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>سور {{ student.name }} المحفوظة - إدارة</title>
@@ -2924,7 +2966,7 @@ ADMIN_STUDENT_MEMORIZATION_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="container">
     <div class="header">
         <h1>📖 سور {{ student.name }} المحفوظة</h1>
@@ -3072,7 +3114,7 @@ NOTIFICATIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>الإشعارات - حلقتي زتاي</title>
@@ -3103,7 +3145,7 @@ NOTIFICATIONS_HTML = r'''
 </head>
 <body>
     {% if student %}{{ theme_style(student)|safe }}{% endif %}
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="container">
     <div class="header">
         <h1>🔔 الإشعارات</h1>
@@ -3144,7 +3186,7 @@ HOME_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>حلقتي زتاي - نظام إدارة الحلقة القرآنية الذكي</title>
@@ -3784,7 +3826,7 @@ HOME_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"><div class="bg-pattern"></div></div>
     <div class="orb orb-1"></div>
     <div class="orb orb-2"></div>
@@ -4020,7 +4062,7 @@ LEADERBOARD_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>لوحة الصدارة - أفضل الطلاب</title>
@@ -4308,7 +4350,7 @@ LEADERBOARD_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"><div class="bg-pattern"></div></div>
 <div class="container">
     <div class="header">
@@ -4515,7 +4557,7 @@ ADMIN_LOGIN_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>دخول المشرف - حلقتي زتاي</title>
@@ -4678,7 +4720,7 @@ ADMIN_LOGIN_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"><div class="bg-pattern"></div></div>
 <div class="orb orb-1"></div>
 <div class="orb orb-2"></div>
@@ -4815,7 +4857,7 @@ STUDENT_LOGIN_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>دخول الطالب - حلقتي زتاي</title>
@@ -4984,7 +5026,7 @@ STUDENT_LOGIN_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"><div class="bg-pattern"></div></div>
 <div class="orb orb-1"></div>
 <div class="orb orb-2"></div>
@@ -5116,7 +5158,7 @@ STUDENT_REGISTER_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تسجيل طالب جديد - حلقتي زتاي</title>
@@ -5295,7 +5337,7 @@ STUDENT_REGISTER_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"><div class="bg-pattern"></div></div>
 <div class="register-container">
     <div class="register-header">
@@ -5607,7 +5649,7 @@ ADMIN_DASHBOARD_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>لوحة تحكم المشرف - حلقتي زتاي</title>
@@ -5796,7 +5838,7 @@ ADMIN_DASHBOARD_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header">
@@ -6021,7 +6063,7 @@ MANAGE_STUDENTS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>إدارة الطلاب - حلقتي زتاي</title>
@@ -6219,7 +6261,7 @@ MANAGE_STUDENTS_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -6435,7 +6477,7 @@ REGISTRATION_REQUESTS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>طلبات التسجيل - حلقتي زتاي</title>
@@ -6653,7 +6695,7 @@ REGISTRATION_REQUESTS_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header">
@@ -6849,7 +6891,7 @@ EVALUATION_SESSIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>التقييم وسجل الحصص - حلقتي زتاي</title>
@@ -7831,7 +7873,7 @@ EVALUATION_SESSIONS_HTML = r'''
 </head>
 
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <!-- ==========================================
     طبقة الخلفية
     ========================================== -->
@@ -8752,7 +8794,7 @@ HOMEWORK_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>إدارة الواجبات - حلقتي زتاي</title>
@@ -9015,7 +9057,7 @@ HOMEWORK_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header">
@@ -9223,7 +9265,7 @@ COMPETITIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>المسابقات - حلقتي زتاي</title>
@@ -10054,7 +10096,7 @@ COMPETITIONS_HTML = r'''
 </head>
 
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -10738,7 +10780,7 @@ ANALYTICS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>التحليلات - حلقتي زتاي</title>
@@ -10886,7 +10928,7 @@ ANALYTICS_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header"><h1>📈 <span class="highlight">التحليلات</span></h1><div class="actions"><button class="btn btn-outline btn-sm" onclick="exportReport()">📥 تصدير التقرير</button><button class="btn btn-outline btn-sm" onclick="refreshData()">🔄 تحديث</button><a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a></div></div>
@@ -11022,7 +11064,7 @@ ADMIN_PROMOTIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>طلبات الترقية - لوحة التحكم</title>
@@ -11108,7 +11150,7 @@ ADMIN_PROMOTION_DETAIL_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تفاصيل طلب الترقية - لوحة التحكم</title>
@@ -11217,7 +11259,7 @@ ADMIN_PROFILE_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ملف المشرف - حلقتي زتاي</title>
@@ -11386,7 +11428,7 @@ ADMIN_PROFILE_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header"><h1>👤 <span class="highlight">ملف المشرف</span></h1><div class="actions"><a href="{{ url_for('admin_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a><a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a></div></div>
@@ -11484,7 +11526,7 @@ ASSISTANTS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>إدارة مساعدي المشرف - حلقتي زتاي</title>
@@ -12022,7 +12064,7 @@ ASSISTANTS_HTML = r'''
 </head>
 
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -12585,7 +12627,7 @@ MESSAGES_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>رسائل المشرف - حلقتي زتاي</title>
@@ -13634,7 +13676,7 @@ MESSAGES_HTML = r'''
 </head>
 
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -14711,7 +14753,7 @@ ADMIN_DUELS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>إدارة التحديات الفردية - حلقتي زتاي</title>
@@ -14888,7 +14930,7 @@ ADMIN_DUELS_HTML = r'''
     </style>
 </head>
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header">
@@ -15015,7 +15057,7 @@ ADMIN_STORE_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>متجر المشرف - حلقتي زتاي</title>
@@ -15755,7 +15797,7 @@ ADMIN_STORE_HTML = r'''
 </head>
 
 <body>
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -16290,7 +16332,7 @@ STUDENT_DASHBOARD_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>لوحة الطالب - حلقتي زتاي</title>
@@ -16505,7 +16547,7 @@ STUDENT_DASHBOARD_HTML = r'''
 </head>
 <body>
     {{ theme_style(student)|safe }}
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header">
@@ -16528,7 +16570,7 @@ STUDENT_DASHBOARD_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-        <a href="{{ '#' }}">⚔️ تحدياتي</a>
+        <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
         <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         {% if assistant_info %}<a href="{{ url_for('student_assistant') }}" style="color:var(--gold-light);">🧑‍🤝‍🧑 لوحة المساعد</a>{% endif %}
     </div>
@@ -16702,210 +16744,1045 @@ ASSISTANT_DASHBOARD_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>لوحة المساعد - {{ assistant_info.name }}</title>
+    <title>لوحة المساعد - حلقتي زتاي</title>
     <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@300;400;500;700;800;900&display=swap" rel="stylesheet">
     <style>
+        /* ==========================================
+                   SECTION 1: المتغيرات الأساسية
+                   ========================================== */
         * { margin: 0; padding: 0; box-sizing: border-box; }
+        
         :root {
-            --primary: #1a2a6c; --primary-light: #2a4a9c; --primary-dark: #0d1a3f;
-            --gold: #c9a227; --gold-light: #e8c84a; --gold-glow: rgba(201,162,39,0.15);
-            --glass: rgba(255,255,255,0.06); --glass-border: rgba(255,255,255,0.10);
-            --text-primary: #ffffff; --text-secondary: rgba(255,255,255,0.7); --text-muted: rgba(255,255,255,0.35);
-            --shadow: 0 8px 32px rgba(0,0,0,0.3); --success: #4ade80; --danger: #f87171;
-            --warning: #fbbf24; --info: #60a5fa; --xp-gold: #ffd700; --xp-purple: #a855f7;
+            --primary: #1a2a6c;
+            --primary-light: #2a4a9c;
+            --primary-dark: #0d1a3f;
+            --gold: #c9a227;
+            --gold-light: #e8c84a;
+            --gold-glow: rgba(201,162,39,0.15);
+            --glass: rgba(255,255,255,0.06);
+            --glass-border: rgba(255,255,255,0.10);
+            --text-primary: #ffffff;
+            --text-secondary: rgba(255,255,255,0.7);
+            --text-muted: rgba(255,255,255,0.35);
+            --shadow: 0 8px 32px rgba(0,0,0,0.3);
+            --success: #4ade80;
+            --danger: #f87171;
+            --warning: #fbbf24;
+            --info: #60a5fa;
+            --xp-gold: #ffd700;
+            --xp-purple: #a855f7;
         }
+
+        /* ==========================================
+                   SECTION 2: الأساسيات
+                   ========================================== */
         body {
-            font-family: 'Tajawal', sans-serif; background: var(--primary-dark);
-            min-height: 100vh; color: var(--text-primary); overflow-x: hidden;
+            font-family: 'Tajawal', sans-serif;
+            background: var(--primary-dark);
+            min-height: 100vh;
+            color: var(--text-primary);
+            overflow-x: hidden;
         }
-        .container { max-width: 1100px; margin: 0 auto; padding: 30px 20px; }
+
+        .bg-layer {
+            position: fixed;
+            inset: 0;
+            z-index: 0;
+            pointer-events: none;
+            background:
+                radial-gradient(ellipse 60% 40% at 30% 20%, rgba(42,74,156,0.08), transparent),
+                radial-gradient(ellipse 50% 30% at 70% 80%, rgba(201,162,39,0.04), transparent);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 16px 20px 30px;
+            position: relative;
+            z-index: 1;
+        }
+
+        /* ==========================================
+                   SECTION 3: الأزرار
+                   ========================================== */
+        .btn {
+            padding: 7px 16px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            text-decoration: none;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            font-family: inherit;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(0,0,0,0.3);
+        }
+        .btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+        }
+
+        .btn-primary { background: var(--primary-light); color: #fff; }
+        .btn-gold { background: linear-gradient(135deg, var(--gold), var(--gold-light)); color: #1a1a1a; }
+        .btn-outline { background: transparent; border: 1.5px solid var(--glass-border); color: var(--text-secondary); }
+        .btn-outline:hover { border-color: var(--gold); color: #fff; }
+        .btn-success { background: var(--success); color: #1a1a1a; }
+        .btn-danger { background: var(--danger); color: #fff; }
+        .btn-warning { background: var(--warning); color: #1a1a1a; }
+        .btn-info { background: var(--info); color: #1a1a1a; }
+
+        .btn-sm { padding: 4px 12px; font-size: 12px; }
+        .btn-xs { padding: 2px 10px; font-size: 11px; }
+
+        /* ==========================================
+                   SECTION 4: الهيدر
+                   ========================================== */
         .header {
-            background: var(--glass); border: 1px solid var(--glass-border);
-            border-radius: 20px; padding: 30px; margin-bottom: 30px;
-            display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 12px;
+            padding: 14px 22px;
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 14px;
+            margin-bottom: 16px;
             backdrop-filter: blur(10px);
         }
-        .avatar {
-            width: 80px; height: 80px; border-radius: 50%;
+
+        .header h1 {
+            font-size: 22px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .header h1 .highlight {
+            background: linear-gradient(135deg, var(--gold-light), var(--primary-light));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header .assistant-badge {
+            font-size: 13px;
+            background: rgba(168,85,247,0.15);
+            color: var(--xp-purple);
+            padding: 4px 14px;
+            border-radius: 20px;
+            border: 1px solid rgba(168,85,247,0.2);
+        }
+
+        .header .actions {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        /* ==========================================
+                   SECTION 5: الإحصائيات السريعة
+                   ========================================== */
+        .stats-mini {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 16px;
+        }
+
+        .stats-mini .stat {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            padding: 12px 16px;
+            text-align: center;
+            backdrop-filter: blur(10px);
+            transition: all 0.3s ease;
+        }
+        .stats-mini .stat:hover {
+            border-color: var(--gold);
+            transform: translateY(-2px);
+        }
+
+        .stats-mini .stat .num {
+            font-size: 22px;
+            font-weight: 800;
+            color: var(--gold-light);
+        }
+        .stats-mini .stat .num.xp {
+            color: var(--xp-gold);
+        }
+        .stats-mini .stat .num.success {
+            color: var(--success);
+        }
+        .stats-mini .stat .num.warning {
+            color: var(--warning);
+        }
+        .stats-mini .stat .label {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* ==========================================
+                   SECTION 6: بطاقة المساعد مع XP
+                   ========================================== */
+        .assistant-card {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 14px;
+            padding: 20px 24px;
+            backdrop-filter: blur(10px);
+            margin-bottom: 16px;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            align-items: center;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .assistant-card::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -20%;
+            width: 200px;
+            height: 200px;
+            background: radial-gradient(circle, rgba(255,215,0,0.05), transparent);
+            border-radius: 50%;
+            pointer-events: none;
+        }
+
+        .assistant-card .avatar {
+            width: 64px;
+            height: 64px;
+            border-radius: 50%;
             background: linear-gradient(135deg, var(--gold), var(--gold-light));
-            display: flex; align-items: center; justify-content: center;
-            font-size: 36px; font-weight: 800; color: #000; flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 28px;
+            font-weight: 700;
+            color: #1a1a1a;
+            flex-shrink: 0;
+            position: relative;
+            z-index: 1;
         }
-        .header-info h1 { font-size: 1.8rem; margin-bottom: 6px; }
-        .header-info p { color: var(--text-secondary); font-size: 0.95rem; }
-        .xp-badge {
-            background: linear-gradient(135deg, rgba(255,215,0,0.15), rgba(168,85,247,0.1));
-            border: 1px solid rgba(255,215,0,0.3); border-radius: 12px;
-            padding: 8px 18px; font-size: 0.9rem; color: var(--xp-gold);
-            display: inline-flex; align-items: center; gap: 6px; margin-top: 10px;
+
+        .assistant-card .info {
+            flex: 1;
+            position: relative;
+            z-index: 1;
         }
-        .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 20px; }
-        .panel {
-            background: var(--glass); border: 1px solid var(--glass-border);
-            border-radius: 16px; padding: 24px; backdrop-filter: blur(10px);
+        .assistant-card .info .name {
+            font-size: 20px;
+            font-weight: 700;
         }
-        .panel h3 { font-size: 1.1rem; margin-bottom: 16px; display: flex; align-items: center; gap: 8px; }
-        .perm-list { display: flex; flex-wrap: wrap; gap: 8px; }
-        .perm-tag {
-            padding: 6px 14px; border-radius: 20px; font-size: 13px;
-            background: rgba(201,162,39,0.1); color: var(--gold-light);
-            border: 1px solid rgba(201,162,39,0.2);
+        .assistant-card .info .email {
+            font-size: 14px;
+            color: var(--text-muted);
         }
-        .perm-tag.admin { background: rgba(168,85,247,0.15); color: var(--xp-purple); border-color: rgba(168,85,247,0.2); }
-        .perm-tag.high { background: rgba(74,222,128,0.1); color: var(--success); border-color: rgba(74,222,128,0.2); }
-        .stat-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid var(--glass-border); }
-        .stat-row:last-child { border-bottom: none; }
-        .stat-label { color: var(--text-secondary); }
-        .stat-value { font-weight: 700; }
-        .actions-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 16px; }
-        .action-card {
-            background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border);
-            border-radius: 12px; padding: 16px; text-align: center;
-            transition: all 0.3s ease; text-decoration: none; color: inherit;
-            display: block;
-        }
-        .action-card:hover { border-color: var(--gold); transform: translateY(-3px); background: rgba(255,255,255,0.06); }
-        .action-icon { font-size: 28px; margin-bottom: 8px; }
-        .action-title { font-weight: 700; font-size: 0.95rem; }
-        .action-desc { font-size: 0.8rem; color: var(--text-muted); margin-top: 4px; }
-        .task-list { display: flex; flex-direction: column; gap: 10px; }
-        .task-item {
-            background: rgba(255,255,255,0.03); border: 1px solid var(--glass-border);
-            border-radius: 10px; padding: 12px 16px;
-        }
-        .task-title { font-weight: 600; font-size: 0.9rem; margin-bottom: 4px; }
-        .task-meta { font-size: 0.75rem; color: var(--text-muted); }
-        .back-btn {
-            display: inline-flex; align-items: center; gap: 6px;
-            color: var(--gold); text-decoration: none; margin-bottom: 20px;
+        .assistant-card .info .xp {
+            margin-top: 4px;
+            font-size: 14px;
+            color: var(--xp-gold);
             font-weight: 600;
         }
-        .toast {
-            position: fixed; bottom: 30px; left: 50%; transform: translateX(-50%);
-            background: var(--glass); border: 1px solid var(--gold);
-            padding: 14px 28px; border-radius: 12px; z-index: 9999;
-            display: none; font-weight: 600;
+
+        .assistant-card .info .xp span {
+            background: rgba(255,215,0,0.1);
+            padding: 2px 12px;
+            border-radius: 20px;
+            border: 1px solid rgba(255,215,0,0.2);
         }
+
+        .assistant-card .xp-animation {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            font-size: 28px;
+            animation: floatXP 2s ease-in-out infinite;
+            z-index: 0;
+        }
+
+        @keyframes floatXP {
+            0%, 100% { transform: translateY(0) rotate(0deg); }
+            50% { transform: translateY(-10px) rotate(10deg); }
+        }
+
+        /* ==========================================
+                   SECTION 7: الصلاحيات
+                   ========================================== */
+        .permissions-panel {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 14px;
+            padding: 16px 20px;
+            backdrop-filter: blur(10px);
+            margin-bottom: 16px;
+        }
+
+        .permissions-panel .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .permissions-panel .panel-header h3 {
+            font-size: 16px;
+            font-weight: 700;
+        }
+
+        .perm-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+        }
+
+        .perm-tag {
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 13px;
+            background: rgba(201,162,39,0.1);
+            color: var(--gold-light);
+            border: 1px solid rgba(201,162,39,0.2);
+        }
+
+        .perm-tag.perm-admin {
+            background: rgba(168,85,247,0.15);
+            color: var(--xp-purple);
+            border-color: rgba(168,85,247,0.2);
+        }
+
+        .perm-tag.perm-high {
+            background: rgba(74,222,128,0.1);
+            color: var(--success);
+            border-color: rgba(74,222,128,0.2);
+        }
+
+        /* ==========================================
+                   SECTION 8: اللوحات (Panels)
+                   ========================================== */
+        .panel {
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 14px;
+            padding: 16px 20px;
+            backdrop-filter: blur(10px);
+            margin-bottom: 16px;
+        }
+
+        .panel .panel-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 12px;
+        }
+
+        .panel .panel-header h3 {
+            font-size: 16px;
+            font-weight: 700;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .panel .panel-header .badge {
+            font-size: 11px;
+            background: rgba(255,255,255,0.06);
+            padding: 2px 12px;
+            border-radius: 20px;
+            color: var(--text-muted);
+        }
+
+        /* ==========================================
+                   SECTION 9: سجل المكافآت (XP History)
+                   ========================================== */
+        .xp-history {
+            max-height: 200px;
+            overflow-y: auto;
+        }
+
+        .xp-history::-webkit-scrollbar {
+            width: 4px;
+        }
+        .xp-history::-webkit-scrollbar-thumb {
+            background: var(--gold);
+            border-radius: 4px;
+        }
+
+        .xp-entry {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 6px 0;
+            border-bottom: 1px solid var(--glass-border);
+            font-size: 13px;
+        }
+
+        .xp-entry:last-child {
+            border-bottom: none;
+        }
+
+        .xp-entry .xp-amount {
+            color: var(--xp-gold);
+            font-weight: 700;
+        }
+
+        .xp-entry .xp-reason {
+            color: var(--text-secondary);
+        }
+
+        .xp-entry .xp-time {
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        /* ==========================================
+                   SECTION 10: الجداول
+                   ========================================== */
+        .table-responsive {
+            overflow-x: auto;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+
+        th, td {
+            padding: 8px 10px;
+            text-align: right;
+            border-bottom: 1px solid var(--glass-border);
+            font-size: 13px;
+        }
+
+        th {
+            color: var(--text-muted);
+            font-weight: 600;
+            white-space: nowrap;
+        }
+
+        tr:hover {
+            background: rgba(255,255,255,0.02);
+        }
+
+        .status-badge {
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+        }
+
+        .status-badge.completed {
+            background: rgba(74,222,128,0.15);
+            color: var(--success);
+        }
+
+        .status-badge.pending {
+            background: rgba(251,191,36,0.15);
+            color: var(--warning);
+        }
+
+        .status-badge.in_progress {
+            background: rgba(96,165,250,0.15);
+            color: var(--info);
+        }
+
+        /* ==========================================
+                   SECTION 11: بطاقات المهام
+                   ========================================== */
+        .tasks-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+            gap: 12px;
+        }
+
+        .task-card {
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--glass-border);
+            border-radius: 10px;
+            padding: 14px 16px;
+            transition: all 0.3s ease;
+        }
+
+        .task-card:hover {
+            border-color: var(--gold);
+        }
+
+        .task-card .task-title {
+            font-weight: 600;
+            font-size: 14px;
+            margin-bottom: 4px;
+        }
+
+        .task-card .task-desc {
+            font-size: 12px;
+            color: var(--text-muted);
+            margin-bottom: 8px;
+        }
+
+        .task-card .task-meta {
+            display: flex;
+            justify-content: space-between;
+            font-size: 11px;
+            color: var(--text-muted);
+        }
+
+        .task-card .task-xp {
+            margin-top: 6px;
+            font-size: 12px;
+            color: var(--xp-gold);
+            background: rgba(255,215,0,0.06);
+            padding: 2px 10px;
+            border-radius: 12px;
+            display: inline-block;
+        }
+
+        /* ==========================================
+                   SECTION 12: رسائل التنبيه
+                   ========================================== */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            left: 30px;
+            padding: 14px 24px;
+            border-radius: 12px;
+            background: var(--primary-dark);
+            border: 1px solid var(--glass-border);
+            backdrop-filter: blur(20px);
+            box-shadow: var(--shadow);
+            z-index: 2000;
+            display: none;
+            animation: slideUp 0.3s ease;
+            max-width: 400px;
+        }
+
+        .toast.show {
+            display: block;
+        }
+
+        .toast .title {
+            font-weight: 700;
+            font-size: 15px;
+        }
+
+        .toast .message {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .toast.success {
+            border-color: var(--success);
+        }
+        .toast.success .title {
+            color: var(--success);
+        }
+
+        .toast.error {
+            border-color: var(--danger);
+        }
+        .toast.error .title {
+            color: var(--danger);
+        }
+
+        .toast.info {
+            border-color: var(--gold);
+        }
+        .toast.info .title {
+            color: var(--gold-light);
+        }
+
+        .toast.xp {
+            border-color: var(--xp-gold);
+        }
+        .toast.xp .title {
+            color: var(--xp-gold);
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* ==========================================
+                   SECTION 13: التجاوب مع الشاشات
+                   ========================================== */
         @media (max-width: 768px) {
-            .header { text-align: center; justify-content: center; }
-            .grid { grid-template-columns: 1fr; }
-            .actions-grid { grid-template-columns: 1fr 1fr; }
+            .header {
+                flex-direction: column;
+                align-items: stretch;
+                text-align: center;
+            }
+            .header .actions {
+                justify-content: center;
+            }
+            .container {
+                padding: 12px;
+            }
+            .assistant-card {
+                flex-direction: column;
+                text-align: center;
+            }
+            .stats-mini {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            .tasks-grid {
+                grid-template-columns: 1fr;
+            }
+            th, td {
+                padding: 4px 6px;
+                font-size: 12px;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .stats-mini {
+                grid-template-columns: 1fr;
+            }
+            .perm-tag {
+                font-size: 11px;
+                padding: 4px 10px;
+            }
         }
     </style>
 </head>
+
 <body>
     {{ theme_style(student)|safe }}
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
+    <div class="bg-layer"></div>
     <div class="container">
-        <a href="/student/dashboard" class="back-btn">⬅ العودة للرئيسية</a>
 
+        <!-- ===== HEADER ===== -->
         <div class="header">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;">
+                <h1>🧑‍🤝‍🧑 <span class="highlight">لوحة المساعد</span></h1>
+                <span class="assistant-badge">⭐ مساعد نشط</span>
+            </div>
+            <div class="actions">
+                <button class="btn btn-outline btn-sm" onclick="refreshData()">🔄 تحديث</button>
+                <a href="{{ url_for('student_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a>
+            </div>
+        </div>
+
+        <!-- ===== بطاقة المساعد ===== -->
+        <div class="assistant-card">
+            <div class="xp-animation">⭐</div>
             <div class="avatar">{{ assistant_info.name[0]|upper if assistant_info.name else '?' }}</div>
-            <div class="header-info">
-                <h1>{{ assistant_info.name }}</h1>
-                <p>{{ assistant_info.email }}</p>
-                <div class="xp-badge">⭐ {{ assistant_info.xp_points|default(0, true) }} نقاط XP</div>
+            <div class="info">
+                <div class="name">{{ assistant_info.name }}</div>
+                <div class="email">{{ assistant_info.email }}</div>
+                <div class="xp">⭐ نقاط XP: <span>{{ assistant_info.xp_points|default(0, true) }}</span></div>
+                <div style="font-size:12px;color:var(--text-muted);margin-top:2px;">
+                    🎯 +5 XP عند إكمال كل مهمة (تلقائياً)
+                </div>
+            </div>
+            <div style="text-align:left;font-size:12px;color:var(--text-muted);">
+                📅 تاريخ المنح: {{ assistant_info.granted_at|fmtdt if assistant_info.granted_at else '-' }}
+                <br>
+                📊 المهام المكتملة: {{ stats.completed_tasks|default(0, true) }}
+                <br>
+                ⭐ إجمالي XP: {{ assistant_info.xp_points|default(0, true) }}
             </div>
         </div>
 
-        <div class="grid">
-            <!-- الصلاحيات -->
-            <div class="panel">
-                <h3>🔐 صلاحياتك</h3>
-                <div class="perm-list">
-                    {% for p in perms %}
-                    <span class="perm-tag {% if p == 'view_all' %}admin{% elif p in ['manage_evaluation','manage_competitions'] %}high{% endif %}">
-                        {{ perm_labels.get(p, p) }}
-                    </span>
-                    {% else %}
-                    <span style="color:var(--text-muted);">لا توجد صلاحيات محددة</span>
-                    {% endfor %}
-                </div>
+        <!-- ===== الإحصائيات السريعة ===== -->
+        <div class="stats-mini">
+            <div class="stat">
+                <div class="num">{{ stats.total_students|default(0, true) }}</div>
+                <div class="label">👨‍🎓 إجمالي الطلاب</div>
             </div>
-
-            <!-- الإحصائيات -->
-            <div class="panel">
-                <h3>📊 إحصائيات</h3>
-                <div class="stat-row">
-                    <span class="stat-label">المهام المنجزة</span>
-                    <span class="stat-value">{{ stats.completed_tasks|default(0, true) }}</span>
-                </div>
-                <div class="stat-row">
-                    <span class="stat-label">إجمالي XP</span>
-                    <span class="stat-value" style="color:var(--xp-gold);">{{ assistant_info.xp_points|default(0, true) }}</span>
-                </div>
-                <div class="stat-row">
-                    <span class="stat-label">تاريخ المنح</span>
-                    <span class="stat-value">{{ assistant_info.granted_at|fmtdt if assistant_info.granted_at else '-' }}</span>
-                </div>
+            <div class="stat">
+                <div class="num success">{{ stats.completed_tasks|default(0, true) }}</div>
+                <div class="label">✅ مهام مكتملة</div>
+            </div>
+            <div class="stat">
+                <div class="num warning">{{ stats.pending_tasks|default(0, true) }}</div>
+                <div class="label">⏳ مهام معلقة</div>
+            </div>
+            <div class="stat">
+                <div class="num xp">{{ stats.total_xp|default(0, true) }}</div>
+                <div class="label">⭐ مجموع XP</div>
             </div>
         </div>
 
-        <!-- روابط سريعة حسب الصلاحيات -->
-        <div class="panel" style="margin-top: 20px;">
-            <h3>⚡ روابط سريعة</h3>
-            <div class="actions-grid">
-                <a href="/student/dashboard" class="action-card">
-                    <div class="action-icon">🏠</div>
-                    <div class="action-title">لوحة الطالب</div>
-                    <div class="action-desc">العودة للوحة الرئيسية</div>
-                </a>
-                {% if 'manage_evaluation' in perms or 'view_all' in perms %}
-                <a href="/student/evaluation" class="action-card">
-                    <div class="action-icon">📊</div>
-                    <div class="action-title">التقييم</div>
-                    <div class="action-desc">إدارة التقييمات</div>
-                </a>
-                {% endif %}
-                {% if 'manage_competitions' in perms or 'view_all' in perms %}
-                <a href="/student/competitions" class="action-card">
-                    <div class="action-icon">🏆</div>
-                    <div class="action-title">المسابقات</div>
-                    <div class="action-desc">إدارة المسابقات</div>
-                </a>
-                {% endif %}
-                {% if 'manage_homework' in perms or 'view_all' in perms %}
-                <a href="/student/homework" class="action-card">
-                    <div class="action-icon">📚</div>
-                    <div class="action-title">الواجبات</div>
-                    <div class="action-desc">إدارة الواجبات</div>
-                </a>
-                {% endif %}
-                {% if 'manage_attendance' in perms or 'view_all' in perms %}
-                <a href="/student/attendance" class="action-card">
-                    <div class="action-icon">📋</div>
-                    <div class="action-title">الحضور</div>
-                    <div class="action-desc">تسجيل الحضور</div>
-                </a>
-                {% endif %}
-                {% if 'manage_memorization' in perms or 'view_all' in perms %}
-                <a href="/student/memorization" class="action-card">
-                    <div class="action-icon">📖</div>
-                    <div class="action-title">التسميع</div>
-                    <div class="action-desc">إدارة التسميع</div>
-                </a>
-                {% endif %}
+        <!-- ===== الصلاحيات ===== -->
+        <div class="permissions-panel">
+            <div class="panel-header">
+                <h3>🔑 صلاحياتك الممنوحة</h3>
+                <span style="font-size:12px;color:var(--text-muted);">{{ perms|length }} صلاحية</span>
+            </div>
+            <div class="perm-list">
+                {% for p in perms %}
+                <span class="perm-tag {% if p == 'view_all' %}perm-admin{% elif p in ['manage_evaluation', 'manage_competitions'] %}perm-high{% endif %}">
+                    {{ perm_labels.get(p, p) }}
+                </span>
+                {% else %}
+                <span style="color:var(--text-muted);">لا توجد صلاحيات محددة</span>
+                {% endfor %}
             </div>
         </div>
 
-        <!-- آخر المهام -->
-        {% if tasks %}
-        <div class="panel" style="margin-top: 20px;">
-            <h3>📋 آخر المهام</h3>
-            <div class="task-list">
-                {% for task in tasks %}
-                <div class="task-item">
-                    <div class="task-title">{{ task.title }}</div>
-                    <div class="task-meta">{{ task.status|fmtdt if task.status else '' }}</div>
+        <!-- ===== سجل المكافآت (XP History) ===== -->
+        {% if xp_history and xp_history|length > 0 %}
+        <div class="panel">
+            <div class="panel-header">
+                <h3>⭐ سجل المكافآت</h3>
+                <span class="badge">{{ xp_history|length }} مكافأة</span>
+            </div>
+            <div class="xp-history">
+                {% for entry in xp_history %}
+                <div class="xp-entry">
+                    <span class="xp-amount">+{{ entry.amount }} XP</span>
+                    <span class="xp-reason">{{ entry.reason }}</span>
+                    <span class="xp-time">{{ entry.created_at|fmtdt if entry.created_at else '-' }}</span>
                 </div>
                 {% endfor %}
             </div>
         </div>
         {% endif %}
+
+        <!-- ===== المهام الموكلة ===== -->
+        {% if tasks and tasks|length > 0 %}
+        <div class="panel">
+            <div class="panel-header">
+                <h3>📋 المهام الموكلة</h3>
+                <span class="badge">{{ tasks|selectattr('status', 'equalto', 'pending')|list|length }} معلقة</span>
+            </div>
+            <div class="tasks-grid">
+                {% for task in tasks %}
+                <div class="task-card">
+                    <div class="task-title">{{ task.title }}</div>
+                    <div class="task-desc">{{ task.description or 'لا يوجد وصف' }}</div>
+                    <div class="task-meta">
+                        <span>📅 {{ task.created_at|fmtdt if task.created_at else '-' }}</span>
+                        <span class="status-badge {{ task.status }}">
+                            {% if task.status == 'completed' %}✅ مكتمل
+                            {% elif task.status == 'in_progress' %}🔄 قيد التنفيذ
+                            {% else %}⏳ معلق{% endif %}
+                        </span>
+                    </div>
+                    {% if task.status != 'completed' %}
+                    <div style="margin-top:8px;display:flex;gap:4px;flex-wrap:wrap;">
+                        <button class="btn btn-success btn-xs" onclick="completeTask('{{ task.id }}', '{{ task.title }}')">
+                            ✅ إكمال المهمة (+5 XP)
+                        </button>
+                        <button class="btn btn-info btn-xs" onclick="updateTaskStatus('{{ task.id }}', 'in_progress')">
+                            🔄 قيد التنفيذ
+                        </button>
+                    </div>
+                    {% else %}
+                    <div class="task-xp">⭐ +5 XP مكافأة</div>
+                    {% endif %}
+                </div>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ===== عرض الطلاب (إذا كانت الصلاحية موجودة) ===== -->
+        {% if 'view_students' in perms %}
+        <div class="panel">
+            <div class="panel-header">
+                <h3>👨‍🎓 قائمة الطلاب</h3>
+                <span class="badge">{{ students|length }} طالب</span>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>الاسم</th>
+                            <th>البريد</th>
+                            <th>الحالة</th>
+                            <th>نقاط XP</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for student in students %}
+                        <tr>
+                            <td>{{ loop.index }}</td>
+                            <td>{{ student.name }}</td>
+                            <td>{{ student.email }}</td>
+                            <td>
+                                <span class="status-badge {% if student.status == 'active' %}completed{% else %}pending{% endif %}">
+                                    {% if student.status == 'active' %}✅ نشط{% else %}⏸️ غير نشط{% endif %}
+                                </span>
+                            </td>
+                            <td>{{ student.xp_points|default(0, true) }}</td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px 0;">
+                                📭 لا يوجد طلاب
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ===== التقييمات (إذا كانت الصلاحية موجودة) ===== -->
+        {% if 'manage_evaluation' in perms %}
+        <div class="panel">
+            <div class="panel-header">
+                <h3>📊 التقييمات الأخيرة</h3>
+                <a href="{{ url_for('evaluation') }}" class="btn btn-primary btn-sm">📊 الذهاب للتقييم</a>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>الطالب</th>
+                            <th>التاريخ</th>
+                            <th>درجة الحفظ</th>
+                            <th>درجة المراجعة</th>
+                            <th>الحالة</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for eval in recent_evaluations %}
+                        <tr>
+                            <td>{{ eval.student_name }}</td>
+                            <td>{{ eval.date|fmtdt if eval.date else '-' }}</td>
+                            <td>{{ eval.score_save|default(0, true) }}</td>
+                            <td>{{ eval.score_rev|default(0, true) }}</td>
+                            <td>
+                                <span class="status-badge {% if eval.sent %}completed{% else %}pending{% endif %}">
+                                    {% if eval.sent %}✅ مرسل{% else %}⏳ غير مرسل{% endif %}
+                                </span>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="5" style="text-align:center;color:var(--text-muted);padding:20px 0;">
+                                📊 لا توجد تقييمات حديثة
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ===== المسابقات (إذا كانت الصلاحية موجودة) ===== -->
+        {% if 'manage_competitions' in perms %}
+        <div class="panel">
+            <div class="panel-header">
+                <h3>🏆 المسابقات النشطة</h3>
+                <a href="{{ url_for('competitions') }}" class="btn btn-primary btn-sm">🏆 الذهاب للمسابقات</a>
+            </div>
+            <div class="table-responsive">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>اسم المسابقة</th>
+                            <th>التاريخ</th>
+                            <th>المشاركون</th>
+                            <th>الحالة</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for comp in active_competitions %}
+                        <tr>
+                            <td>{{ comp.name }}</td>
+                            <td>{{ comp.date|fmtdt if comp.date else '-' }}</td>
+                            <td>{{ comp.participants_count|default(0, true) }}</td>
+                            <td>
+                                <span class="status-badge {% if comp.active %}completed{% else %}pending{% endif %}">
+                                    {% if comp.active %}✅ نشطة{% else %}⏸️ غير نشطة{% endif %}
+                                </span>
+                            </td>
+                        </tr>
+                        {% else %}
+                        <tr>
+                            <td colspan="4" style="text-align:center;color:var(--text-muted);padding:20px 0;">
+                                🏆 لا توجد مسابقات نشطة
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- ===== روابط سريعة ===== -->
+        <div class="panel">
+            <div class="panel-header">
+                <h3>🔗 روابط سريعة</h3>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+                {% if 'send_messages' in perms %}
+                <a href="{{ url_for('admin_messages') }}" class="btn btn-primary btn-sm">💬 الرسائل</a>
+                {% endif %}
+                {% if 'manage_evaluation' in perms %}
+                <a href="{{ url_for('evaluation') }}" class="btn btn-warning btn-sm">📊 التقييم</a>
+                {% endif %}
+                {% if 'grade_homework' in perms %}
+                <a href="{{ url_for('homework') }}" class="btn btn-info btn-sm">📚 الواجبات</a>
+                {% endif %}
+                {% if 'manage_competitions' in perms %}
+                <a href="{{ url_for('competitions') }}" class="btn btn-gold btn-sm">🏆 المسابقات</a>
+                {% endif %}
+                {% if 'view_students' in perms %}
+                <a href="{{ url_for('manage_students') }}" class="btn btn-outline btn-sm">👨‍🎓 الطلاب</a>
+                {% endif %}
+                {% if 'view_analytics' in perms %}
+                <a href="{{ url_for('admin_analytics') }}" class="btn btn-outline btn-sm">📈 التحليلات</a>
+                {% endif %}
+            </div>
+        </div>
+
     </div>
-    <div class="toast" id="toast"></div>
+
+    <!-- ==========================================
+    رسالة التنبيه (Toast)
+    ========================================== -->
+    <div class="toast" id="toast">
+        <div class="title" id="toastTitle">✅ تم</div>
+        <div class="message" id="toastMessage">تم تنفيذ العملية بنجاح</div>
+    </div>
+
+    <!-- ==========================================
+    جافا سكريبت
+    ========================================== -->
+    <script>
+        /**
+         * ==========================================
+         * SECTION 1: دوال مساعدة
+         * ==========================================
+         */
+
+        function showToast(type, title, message) {
+            const toast = document.getElementById('toast');
+            toast.className = 'toast show ' + type;
+            document.getElementById('toastTitle').textContent = title;
+            document.getElementById('toastMessage').textContent = message;
+
+            clearTimeout(toast._timeout);
+            toast._timeout = setTimeout(function() {
+                toast.classList.remove('show');
+            }, 4000);
+        }
+
+        function refreshData() {
+            showToast('info', '🔄', 'جاري تحديث البيانات...');
+            setTimeout(function() {
+                location.reload();
+            }, 1000);
+        }
+
+
+        /**
+         * ==========================================
+         * SECTION 2: إدارة المهام مع XP التلقائي
+         * ==========================================
+         */
+
+        function completeTask(taskId, taskTitle) {
+            if (!confirm('✅ تأكيد إكمال المهمة "' + taskTitle + '"؟\\nستحصل على +5 نقاط XP تلقائياً!')) return;
+
+            showToast('info', '⏳', 'جاري إكمال المهمة...');
+
+            fetch('/admin/assistant/complete_task', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        task_id: taskId
+                    })
+                })
+                .then(function(r) {
+                    return r.json();
+                })
+                .then(function(data) {
+                    if (data.success) {
+                        showToast('xp', '⭐ مكافأة!', 'تم إكمال المهمة وحصلت على +5 XP');
+                        setTimeout(function() {
+                            location.reload();
+                        }, 1500);
+                    } else {
+                        showToast('error', '❌ خطأ', data.message || 'حدث خطأ');
+                    }
+                })
+                .catch(function() {
+                    showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال');
+                });
+        }
+
+        function updateTaskStatus(taskId, status) {
+            const statusMap = {
+                'in_progress': '🔄 قيد التنفيذ'
+            };
+
+            if (!confirm('تأكيد تغيير حالة المهمة إلى "' + statusMap[status] + '"؟')) return;
+
+            showToast('info', '⏳', 'جاري تحديث حالة المهمة...');
+
+            fetch('/admin/assistant/update_task_status', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        task_id: taskId,
+                        status: status
+                    })
+                })
+                .then(function(r) {
+                    return r.json();
+                })
+                .then(function(data) {
+                    if (data.success) {
+                        showToast('success', '✅ تم', 'تم تحديث حالة المهمة');
+                        setTimeout(function() {
+                            location.reload();
+                        }, 1000);
+                    } else {
+                        showToast('error', '❌ خطأ', data.message || 'حدث خطأ');
+                    }
+                })
+                .catch(function() {
+                    showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال');
+                });
+        }
+
+
+        /**
+         * ==========================================
+         * SECTION 3: تشغيل التحديث التلقائي
+         * ==========================================
+         */
+
+        console.log('🧑‍🤝‍🧑 لوحة المساعد جاهزة');
+        console.log('⭐ نظام XP التلقائي: +5 XP عند إكمال كل مهمة');
+        console.log('🔑 الصلاحيات: ' + '{{ perms|join(", ") }}');
+        console.log('⭐ نقاط XP: {{ assistant_info.xp_points|default(0, true) }}');
+        console.log('📋 المهام المعلقة: {{ tasks|selectattr("status", "equalto", "pending")|list|length }}');
+    </script>
+
 </body>
 </html>
 '''
@@ -16916,7 +17793,7 @@ STUDENT_PROFILE_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>ملفي الشخصي - حلقتي زتاي</title>
@@ -17086,7 +17963,7 @@ STUDENT_PROFILE_HTML = r'''
 </head>
 <body>
     {{ theme_style(student)|safe }}
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header"><h1>👤 <span class="highlight">ملفي الشخصي</span></h1><div class="actions"><a href="{{ url_for('student_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a><a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a></div></div>
@@ -17101,7 +17978,7 @@ STUDENT_PROFILE_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-        <a href="{{ '#' }}">⚔️ تحدياتي</a>
+        <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
         <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         <a href="{{ url_for('student_profile') }}" class="active">👤 ملفي</a>
     </div>
@@ -17205,7 +18082,7 @@ STUDENT_REPORT_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تقريري - حلقتي زتاي</title>
@@ -17795,7 +18672,7 @@ STUDENT_REPORT_HTML = r'''
 
 <body>
     {{ theme_style(student)|safe }}
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -17821,7 +18698,7 @@ STUDENT_REPORT_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-            <a href="{{ '#' }}">⚔️ تحدياتي</a>
+            <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
             <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         </div>
 
@@ -18258,7 +19135,7 @@ STUDENT_HOMEWORK_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>واجباتي - حلقتي زتاي</title>
@@ -19056,7 +19933,7 @@ STUDENT_HOMEWORK_HTML = r'''
 
 <body>
     {{ theme_style(student)|safe }}
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -19081,7 +19958,7 @@ STUDENT_HOMEWORK_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-            <a href="{{ '#' }}">⚔️ تحدياتي</a>
+            <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
             <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         </div>
 
@@ -19595,7 +20472,7 @@ STUDENT_COMPETITIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>مسابقاتي - حلقتي زتاي</title>
@@ -20170,7 +21047,7 @@ STUDENT_COMPETITIONS_HTML = r'''
 
 <body>
     {{ theme_style(student)|safe }}
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -20195,7 +21072,7 @@ STUDENT_COMPETITIONS_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-            <a href="{{ '#' }}">⚔️ تحدياتي</a>
+            <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
             <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         </div>
 
@@ -20504,7 +21381,7 @@ STUDENT_MESSAGES_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>رسائلي - حلقتي زتاي</title>
@@ -21249,7 +22126,7 @@ STUDENT_MESSAGES_HTML = r'''
 
 <body>
     {{ theme_style(student)|safe }}
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -21281,7 +22158,7 @@ STUDENT_MESSAGES_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-            <a href="{{ '#' }}">⚔️ تحدياتي</a>
+            <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
             <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         </div>
 
@@ -22027,7 +22904,7 @@ STUDENT_POINTS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>رصيدي - حلقتي زتاي</title>
@@ -22213,7 +23090,7 @@ STUDENT_POINTS_HTML = r'''
 </head>
 <body>
     {{ theme_style(student)|safe }}
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header"><h1>💰 <span class="highlight">رصيدي</span></h1><div class="actions"><button class="btn btn-outline btn-sm" onclick="exportTransactions()">📥 تصدير</button><a href="{{ url_for('student_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a><a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a></div></div>
@@ -22228,7 +23105,7 @@ STUDENT_POINTS_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
         <a href="{{ url_for('student_points') }}" class="active">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-        <a href="{{ '#' }}">⚔️ تحدياتي</a>
+        <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
         <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
     </div>
     <div class="balance-display">
@@ -22334,7 +23211,7 @@ STUDENT_MEMORIZATION_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>سوري المحفوظة - حلقتي زتاي</title>
@@ -22446,7 +23323,7 @@ STUDENT_LEVEL_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>مستواي - حلقتي زتاي</title>
@@ -22531,7 +23408,7 @@ STUDENT_LEVEL_HTML = r'''
 </head>
 <body>
     {{ theme_style(student)|safe }}
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
 <div class="bg-layer"></div>
 <div class="container">
     <div class="header"><h1>🎖️ <span class="highlight">مستواي</span></h1><div class="actions"><a href="{{ url_for('student_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a><a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a></div></div>
@@ -22546,7 +23423,7 @@ STUDENT_LEVEL_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
         <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-        <a href="{{ '#' }}">⚔️ تحدياتي</a>
+        <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
         <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
     </div>
     {% with messages = get_flashed_messages(with_categories=true) %}
@@ -22645,7 +23522,7 @@ STUDENT_PROMOTIONS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>طلبات التقييم - حلقتي زتاي</title>
@@ -22727,7 +23604,7 @@ STUDENT_STORE_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>متجر الطالب - حلقتي زتاي</title>
@@ -23443,7 +24320,7 @@ STUDENT_STORE_HTML = r'''
 
 <body>
     {{ theme_style(student)|safe }}
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -23473,7 +24350,7 @@ STUDENT_STORE_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}" class="active">🛍️ المتجر</a>
-            <a href="{{ '#' }}">⚔️ تحدياتي</a>
+            <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
             <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         </div>
 
@@ -23610,6 +24487,23 @@ STUDENT_STORE_HTML = r'''
                             <span class="file-name" id="coverFileName">اسم الملف</span>
                             <span class="file-size" id="coverFileSize">0 KB</span>
                             <button type="button" class="remove-file" onclick="removeFile('cover')">✕</button>
+                        </div>
+                    </div>
+
+                    <!-- رفع ملف الكتاب PDF من الهاتف -->
+                    <div class="form-group">
+                        <label>📄 ملف الكتاب PDF (اختياري)</label>
+                        <div class="file-upload-area" id="pdfUploadArea">
+                            <div class="upload-icon">📄</div>
+                            <div class="upload-text">انقر لاختيار ملف PDF من الهاتف</div>
+                            <div class="upload-sub">يدعم: PDF فقط، حتى 30MB</div>
+                            <input type="file" name="pdf_file" id="pdfFileInput" accept="application/pdf,.pdf" onchange="handleFileSelect(this, 'pdf')">
+                        </div>
+                        <div class="file-preview" id="pdfPreview">
+                            <span class="file-icon">📄</span>
+                            <span class="file-name" id="pdfFileName">اسم الملف</span>
+                            <span class="file-size" id="pdfFileSize">0 KB</span>
+                            <button type="button" class="remove-file" onclick="removeFile('pdf')">✕</button>
                         </div>
                     </div>
 
@@ -23828,9 +24722,9 @@ STUDENT_STORE_HTML = r'''
             const file = input.files[0];
             if (!file) return;
 
-            // التحقق من الحجم (5MB كحد أقصى للصور)
-            if (file.size > 5 * 1024 * 1024) {
-                showToast('error', '❌ خطأ', 'الملف كبير جداً، الحد الأقصى 5MB');
+            const maxSize = type === 'pdf' ? 30 * 1024 * 1024 : 5 * 1024 * 1024;
+            if (file.size > maxSize) {
+                showToast('error', '❌ خطأ', 'الملف كبير جداً، الحد الأقصى ' + (type === 'pdf' ? '30MB' : '5MB'));
                 input.value = '';
                 return;
             }
@@ -23843,7 +24737,7 @@ STUDENT_STORE_HTML = r'''
             sizeEl.textContent = (file.size / 1024).toFixed(1) + ' KB';
 
             const iconEl = preview.querySelector('.file-icon');
-            iconEl.textContent = '🖼️';
+            iconEl.textContent = type === 'pdf' ? '📄' : '🖼️';
 
             preview.classList.add('show');
 
@@ -23864,8 +24758,8 @@ STUDENT_STORE_HTML = r'''
 
             const area = document.getElementById(type + 'UploadArea');
             if (area) {
-                area.querySelector('.upload-text').textContent = type === 'cover' ? 'انقر لاختيار صورة الغلاف' : 'انقر لاختيار ملف';
-                area.querySelector('.upload-icon').textContent = type === 'cover' ? '🖼️' : '📄';
+                area.querySelector('.upload-text').textContent = type === 'cover' ? 'انقر لاختيار صورة الغلاف' : (type === 'pdf' ? 'انقر لاختيار ملف PDF من الهاتف' : 'انقر لاختيار ملف');
+                area.querySelector('.upload-icon').textContent = type === 'cover' ? '🖼️' : (type === 'pdf' ? '📄' : '📄');
             }
         }
 
@@ -23899,6 +24793,7 @@ STUDENT_STORE_HTML = r'''
                         showToast('success', '✅ تم', data.message || 'تم إرسال العرض بنجاح');
                         form.reset();
                         removeFile('cover');
+                        removeFile('pdf');
                         setTimeout(function() {
                             location.reload();
                         }, 1500);
@@ -23934,7 +24829,7 @@ STUDENT_DUELS_HTML = r'''
 <!DOCTYPE html>
 <html dir="rtl" lang="ar">
 <head>
-    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='20' fill='%230d9488'/%3E%3Ctext x='50' y='65' font-size='55' text-anchor='middle' fill='white' font-family='Arial'%3Eح%3C/text%3E%3C/svg%3E">
+    <link rel="icon" type="image/png" href="{{ url_for('static', filename='logo.png') }}">
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>تحدياتي الفردية - حلقتي زتاي</title>
@@ -24450,7 +25345,7 @@ STUDENT_DUELS_HTML = r'''
 
 <body>
     {{ theme_style(student)|safe }}
-    <div title="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:12px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.2);background:linear-gradient(135deg,#0d9488,#14b8a6);display:flex;align-items:center;justify-content:center;color:#fff;font-size:22px;font-weight:bold;cursor:default;user-select:none;">ح</div>
+    <img src="{{ url_for('static', filename='logo.png') }}" alt="شعار الحلقة" style="position:fixed;top:10px;left:10px;width:44px;height:44px;border-radius:10px;z-index:9999;box-shadow:0 2px 8px rgba(0,0,0,0.25);">
     <div class="bg-layer"></div>
     <div class="container">
 
@@ -24475,7 +25370,7 @@ STUDENT_DUELS_HTML = r'''
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
-            <a href="{{ '#' }}" class="active">⚔️ تحدياتي</a>
+            <a href="{{ url_for('student_duels') }}" class="active">⚔️ تحدياتي</a>
             <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         </div>
 
@@ -24749,90 +25644,84 @@ def admin_session_history():
 @app.route('/student/assistant')
 @login_required('student')
 def student_assistant():
-    """لوحة المساعد — للطلاب الذين لديهم صلاحية مساعد"""
+    """لوحة المساعد: تعرض للطالب صلاحياته الممنوحة من المشرف وتتيح له استعمالها فعلياً"""
     student = get_current_user()
-    student_id = student['id']
-
-    # التحقق من أن الطالب مساعد فعلاً
-    assistant = query_one(
-        "SELECT * FROM assistants WHERE student_id = %s AND active = 1",
-        (student_id,)
-    )
-
+    assistant = get_assistant_by_student_id(student['id'])
     if not assistant:
-        flash('ليس لديك صلاحية الوصول كمساعد', 'danger')
+        flash('ليس لديك صلاحيات مساعد حالياً', 'info')
         return redirect(url_for('student_dashboard'))
 
-    # بناء assistant_info من بيانات المساعد + الطالب
-    assistant_info = dict(assistant)
-    assistant_info['name'] = student.get('name', '')
-    assistant_info['email'] = student.get('email', '')
-
-    # XP formatting
-    granted = assistant.get('granted_at')
-    assistant_info['granted_at'] = granted.strftime('%Y-%m-%d %H:%M:%S') if granted and hasattr(granted, 'strftime') else (granted or '')
-
-    # الصلاحيات
-    perms = assistant.get('permissions', '')
-    perms = [p.strip() for p in perms.split(',') if p.strip()] if perms else []
-
-    # المهام (assistant_actions)
-    tasks = query_all(
-        "SELECT id, action_type as title, description, created_at as status FROM assistant_actions WHERE assistant_id = %s ORDER BY created_at DESC LIMIT 20",
-        (assistant['id'],)
-    )
-    if not tasks:
-        tasks = []
-
-    # إحصائيات
-    stats = query_one(
-        "SELECT COUNT(*) as completed_tasks FROM assistant_actions WHERE assistant_id = %s",
-        (assistant['id'],)
-    )
-    if not stats:
-        stats = {'completed_tasks': 0}
-
-    # المسابقات النشطة
-    active_competitions = query_all(
-        "SELECT * FROM competitions WHERE active = 1 ORDER BY date DESC LIMIT 5"
-    )
-    if not active_competitions:
-        active_competitions = []
-
-    # التقييمات الأخيرة (فارغة إذا لم يكن الجدول موجوداً)
-    recent_evaluations = []
-
-    # تاريخ XP
-    xp_history = []
-
-    # تسميات الصلاحيات
+    perms = assistant['permissions'].split(',') if assistant['permissions'] else []
     perm_labels = {
-        'view_all': 'عرض الكل',
-        'manage_students': 'إدارة الطلاب',
-        'manage_evaluation': 'إدارة التقييم',
-        'manage_competitions': 'إدارة المسابقات',
-        'manage_attendance': 'إدارة الحضور',
-        'manage_homework': 'إدارة الواجبات',
-        'manage_memorization': 'إدارة التسميع',
-        'manage_payments': 'إدارة المدفوعات',
-        'manage_store': 'إدارة المتجر',
-        'send_notifications': 'إرسال الإشعارات',
+        'view_students': '👁️ عرض الطلاب',
+        'send_messages': '💬 إرسال رسائل',
+        'grade_homework': '📚 تقييم واجبات',
+        'manage_evaluation': '📊 تقييم يومي',
+        'manage_competitions': '🏆 إدارة مسابقات',
+        'view_analytics': '📈 عرض تحليلات',
+        'manage_students': '👨‍🎓 إدارة الطلاب',
+        'manage_attendance': '📋 إدارة الحضور',
+        'manage_sessions': '🗂️ إدارة الحصص',
+        'export_data': '📥 تصدير البيانات',
+        'manage_reports': '📊 إدارة التقارير',
+        'manage_announcements': '📢 إدارة الإعلانات',
+        'manage_events': '🎪 إدارة الفعاليات',
+        'manage_badges': '🏅 إدارة الشارات',
+        'view_all': '👑 صلاحيات كاملة',
     }
 
-    return render_template_string(
-        ASSISTANT_DASHBOARD_HTML,
-        student=student,
-        assistant_info=assistant_info,
-        perms=perms,
-        perm_labels=perm_labels,
-        tasks=tasks,
-        stats=stats,
-        active_competitions=active_competitions,
-        recent_evaluations=recent_evaluations,
-        xp_history=xp_history,
-        today=get_today(),
-        datetime=datetime
-    )
+    assistant_info = dict(assistant)
+    assistant_info['name'] = student.get('name')
+    assistant_info['email'] = student.get('email')
+
+    tasks = get_assistant_tasks(assistant['id'])
+    xp_history = get_assistant_xp_history(assistant['id'])
+
+    students = []
+    if 'view_students' in perms or 'view_all' in perms:
+        students = get_active_students()
+
+    total_students_count = len(students) if students else len(get_active_students())
+
+    recent_evaluations = []
+    if 'manage_evaluation' in perms or 'view_all' in perms:
+        recent_evaluations = query_all("""
+            SELECT de.*, s.name as student_name
+            FROM daily_evaluations de
+            JOIN students s ON s.id = de.student_id
+            ORDER BY de.date DESC, de.id DESC
+            LIMIT 15
+        """)
+
+    active_competitions = []
+    if 'manage_competitions' in perms or 'view_all' in perms:
+        active_competitions = query_all("""
+            SELECT c.*,
+                   (SELECT COUNT(*) FROM competition_grades WHERE competition_id = c.id) as participants_count
+            FROM competitions c
+            ORDER BY c.date DESC
+            LIMIT 10
+        """)
+
+    stats = {
+        'total_students': total_students_count,
+        'completed_tasks': len([t for t in tasks if t.get('status') == 'completed']),
+        'pending_tasks': len([t for t in tasks if t.get('status') != 'completed']),
+        'total_xp': assistant.get('xp_points', 0) or 0,
+    }
+
+    return render_template_string(ASSISTANT_DASHBOARD_HTML,
+                                   student=student,
+                                   assistant_info=assistant_info,
+                                   perms=perms,
+                                   perm_labels=perm_labels,
+                                   stats=stats,
+                                   tasks=tasks,
+                                   xp_history=xp_history,
+                                   students=students,
+                                   recent_evaluations=recent_evaluations,
+                                   active_competitions=active_competitions,
+                                   datetime=datetime)
 @app.route('/logout')
 def logout():
     """تسجيل الخروج"""
@@ -25151,6 +26040,8 @@ def admin_promotion_decide(request_id):
 @login_required('admin')
 def manage_students():
     """إدارة الطلاب"""
+    _gate = assistant_gate('view_students')
+    if _gate: return _gate
     if request.method == 'POST':
         action = request.form.get('action', 'add')
         name = request.form.get('name', '').strip()
@@ -25325,6 +26216,8 @@ def check_new_requests():
 @login_required('admin')
 def evaluation():
     """صفحة التقييم وسجل الحصص"""
+    _gate = assistant_gate('manage_evaluation')
+    if _gate: return _gate
     students = get_active_students()
     months = query_all("""
         SELECT m.*, 
@@ -25566,6 +26459,8 @@ def copy_previous_evaluation():
 @login_required('admin')
 def homework():
     """إدارة الواجبات"""
+    _gate = assistant_gate('grade_homework')
+    if _gate: return _gate
     students = get_active_students()
     homework_data = {}
     
@@ -25657,6 +26552,8 @@ def copy_previous_homework():
 @login_required('admin')
 def competitions():
     """إدارة المسابقات"""
+    _gate = assistant_gate('manage_competitions')
+    if _gate: return _gate
     competitions_list = query_all("""
         SELECT c.*,
                (SELECT COUNT(*) FROM competition_grades WHERE competition_id = c.id) as participants_count
@@ -25805,6 +26702,8 @@ def get_competition_grades_json(comp_id):
 @login_required('admin')
 def admin_messages():
     """صفحة رسائل المشرف"""
+    _gate = assistant_gate('send_messages')
+    if _gate: return _gate
     admin = get_current_user()
     groups = query_all("SELECT * FROM message_groups ORDER BY name")
     groups = [dict(g) for g in groups]
@@ -26244,6 +27143,8 @@ def admin_student_memorization_confirm_all(student_id):
 @login_required('admin')
 def admin_analytics():
     """صفحة التحليلات"""
+    _gate = assistant_gate('view_analytics')
+    if _gate: return _gate
     students_count = query_one("SELECT COUNT(*) as count FROM students")['count']
     active_students = query_one("SELECT COUNT(*) as count FROM students WHERE status = 'active'")['count']
     competitions_count = query_one("SELECT COUNT(*) as count FROM competitions WHERE date >= (CURRENT_DATE - INTERVAL '30 days')")['count']
@@ -26445,6 +27346,44 @@ def reset_assistant_xp_due_date(assistant_id):
         (next_month, assistant_id)
     )
     return jsonify({'success': True, 'message': 'تم تجديد المنحة للشهر القادم'})
+@app.route('/admin/assistant/complete_task', methods=['POST'])
+@login_required()
+def assistant_complete_task():
+    """إكمال مهمة من طرف المساعد نفسه (أو المشرف)؛ يمنح +5 XP تلقائياً عند الإكمال"""
+    if session.get('role') not in ('assistant', 'admin'):
+        return jsonify({'success': False, 'message': 'غير مصرح'})
+    task_id = (request.get_json(silent=True) or {}).get('task_id')
+    if not task_id:
+        return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
+    task = query_one("SELECT * FROM assistant_tasks WHERE id = ?", (task_id,))
+    if not task:
+        return jsonify({'success': False, 'message': 'المهمة غير موجودة'})
+    if session.get('role') == 'assistant':
+        my_assistant = get_assistant_by_student_id(session.get('user_id'))
+        if not my_assistant or task['assistant_id'] != my_assistant['id']:
+            return jsonify({'success': False, 'message': 'غير مصرح لك بهذه المهمة'})
+    update_task_status(task_id, 'completed')
+    return jsonify({'success': True, 'message': 'تم إكمال المهمة ومنح +5 XP'})
+@app.route('/admin/assistant/update_task_status', methods=['POST'])
+@login_required()
+def assistant_update_task_status():
+    """تحديث حالة مهمة من طرف المساعد نفسه (أو المشرف)"""
+    if session.get('role') not in ('assistant', 'admin'):
+        return jsonify({'success': False, 'message': 'غير مصرح'})
+    data = request.get_json(silent=True) or {}
+    task_id = data.get('task_id')
+    status = data.get('status')
+    if not task_id or status not in ('pending', 'in_progress', 'completed'):
+        return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
+    task = query_one("SELECT * FROM assistant_tasks WHERE id = ?", (task_id,))
+    if not task:
+        return jsonify({'success': False, 'message': 'المهمة غير موجودة'})
+    if session.get('role') == 'assistant':
+        my_assistant = get_assistant_by_student_id(session.get('user_id'))
+        if not my_assistant or task['assistant_id'] != my_assistant['id']:
+            return jsonify({'success': False, 'message': 'غير مصرح لك بهذه المهمة'})
+    update_task_status(task_id, status)
+    return jsonify({'success': True, 'message': 'تم تحديث حالة المهمة'})
 @app.route('/admin/duels')
 @login_required('admin')
 def admin_duels():
@@ -26596,7 +27535,11 @@ def student_login():
                 flash('حسابك غير نشط، يرجى التواصل مع المشرف', 'danger')
                 return redirect(url_for('student_login'))
             
-            create_student_session(student['id'], student['name'], student['email'])
+            active_assistant = get_assistant_by_student_id(student['id'])
+            if active_assistant:
+                create_assistant_session(student['id'], student['name'], student['email'])
+            else:
+                create_student_session(student['id'], student['name'], student['email'])
             remember = bool(request.form.get('remember'))
             session.permanent = True
             app.permanent_session_lifetime = timedelta(days=30) if remember else timedelta(hours=8)
@@ -26712,21 +27655,6 @@ def student_toggle_theme_mode():
     current_mode = (student.get('theme_mode') or 'dark')
     new_mode = 'light' if current_mode == 'dark' else 'dark'
     execute_query("UPDATE students SET theme_mode = ? WHERE id = ?", (new_mode, student['id']))
-    return redirect(request.referrer or url_for('student_dashboard'))
-
-
-@app.route('/student/upload_avatar', methods=['POST'])
-@login_required('student')
-def student_upload_avatar():
-    """رفع صورة شخصية للطالب"""
-    student = get_current_user()
-    avatar_file = request.files.get('avatar')
-    if avatar_file and avatar_file.filename:
-        avatar_url = save_uploaded_file(avatar_file, 'avatars')
-        execute_query("UPDATE students SET avatar_url = %s WHERE id = %s", (avatar_url, student['id']))
-        flash('تم تحديث الصورة الشخصية', 'success')
-    else:
-        flash('لم يتم اختيار ملف', 'warning')
     return redirect(request.referrer or url_for('student_dashboard'))
 @app.route('/student/profile', methods=['GET', 'POST'])
 @login_required('student')
@@ -26970,10 +27898,7 @@ def student_competitions():
     for comp in competitions_list:
         comp['participated'] = 1 if comp.get('my_grade') is not None else 0
         comp['won'] = 1 if comp.get('my_rank') == 1 else 0
-        today = get_today()
-        if isinstance(today, str):
-            today = datetime.strptime(today, '%Y-%m-%d').date()
-        comp['completed'] = 1 if comp['date'] < today else 0
+        comp['completed'] = 1 if comp['date'] < get_today() else 0
     
     return render_template_string(STUDENT_COMPETITIONS_HTML,
                                    student=student,
@@ -27541,9 +28466,10 @@ def buy_book_route(book_id):
 @app.route('/student/store/buy_color/<color_id>', methods=['POST'])
 @login_required('student')
 def buy_color_route(color_id):
-    """شراء/تفعيل لون واجهة من متجر الألوان"""
+    """شراء/تفعيل لون واجهة من متجر الألوان (مجاني ومباشر للمساعدين والمشرفين)"""
     student = get_current_user()
-    ok, message = buy_theme_color(student['id'], color_id)
+    is_free = session.get('role') in ('admin', 'assistant')
+    ok, message = buy_theme_color(student['id'], color_id, free=is_free)
     return jsonify({'success': ok, 'message': message})
 @app.route('/student/store/activate_color/<color_id>', methods=['POST'])
 @login_required('student')
@@ -27589,7 +28515,7 @@ def unlock_student_route(target_id):
 def sell_book_route():
     """عرض كتاب للبيع من طالب"""
     student = get_current_user()
-
+    
     title = request.form.get('title')
     author = request.form.get('author')
     description = request.form.get('description')
@@ -27605,13 +28531,14 @@ def sell_book_route():
     if cover_file and cover_file.filename:
         cover_url = save_uploaded_file(cover_file, 'books')
 
-    # رفع ملف PDF
+    # رفع ملف الكتاب PDF من الهاتف
     pdf_url = None
     if pdf_file and pdf_file.filename:
-        if pdf_file.filename.lower().endswith('.pdf'):
-            pdf_url = save_uploaded_file(pdf_file, 'books')
-        else:
-            return jsonify({'success': False, 'message': 'يجب أن يكون الملف بصيغة PDF'})
+        if not pdf_file.filename.lower().endswith('.pdf'):
+            return jsonify({'success': False, 'message': 'يُسمح فقط بملفات PDF'})
+        pdf_url = save_uploaded_file(pdf_file, 'books', max_size=30 * 1024 * 1024)
+        if not pdf_url:
+            return jsonify({'success': False, 'message': 'تعذر رفع ملف الـ PDF (تحقق من الحجم/النوع)'})
 
     create_book_offer({
         'student_id': student['id'],
@@ -27622,8 +28549,9 @@ def sell_book_route():
         'cover_url': cover_url,
         'pdf_url': pdf_url
     })
-
-    return jsonify({'success': True, 'message': 'تم إرسال العرض بنجاح'})@app.route('/student/duels')
+    
+    return jsonify({'success': True, 'message': 'تم إرسال العرض بنجاح'})
+@app.route('/student/duels')
 @login_required('student')
 def student_duels():
     """تحديات الطالب الفردية"""
@@ -27753,22 +28681,6 @@ def add_missing_columns():
 # 6. نشغل الدالة عند بدء التطبيق
 add_missing_columns()
 
-@app.route('/student/evaluation')
-@login_required('student')
-def student_evaluation():
-    """تقييم الطالب"""
-    student = get_current_user()
-    return render_template_string(STUDENT_EVALUATION_HTML, student=student, today=get_today(), datetime=datetime)
-
-@app.route('/student/attendance')
-@login_required('student')
-def student_attendance():
-    """حضور الطالب"""
-    student = get_current_user()
-    records = query_all("SELECT * FROM attendance WHERE student_id = %s ORDER BY date DESC LIMIT 30", (student['id'],))
-    return render_template_string(STUDENT_ATTENDANCE_HTML, student=student, records=records, today=get_today(), datetime=datetime)
-
-
 def add_theme_color_column():
     """إضافة أعمدة متجر الألوان وميزة تشفير المعلومات (تعمل دائماً بغض النظر عن حالة الأعمدة الأخرى)"""
     try:
@@ -27777,6 +28689,8 @@ def add_theme_color_column():
         execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS owned_theme_gradients TEXT")
         execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS info_encrypted INTEGER DEFAULT 0")
         execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS points_hidden INTEGER DEFAULT 0")
+        execute_query("ALTER TABLE book_offers ADD COLUMN IF NOT EXISTS cover_url TEXT")
+        execute_query("ALTER TABLE book_offers ADD COLUMN IF NOT EXISTS pdf_url TEXT")
         execute_query("""
             CREATE TABLE IF NOT EXISTS student_unlocks (
                 id SERIAL PRIMARY KEY,
