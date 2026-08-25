@@ -34,11 +34,6 @@ def shade_hex(hex_color, factor):
     except Exception:
         return hex_color
 
-def build_gradient_css(hex_colors, factor, angle=135):
-    """يبني قيمة CSS لتدرج خطي بين لونين أو أكثر (N ألوان) بمعامل تغميق/تفتيح موحّد"""
-    stops = ', '.join(shade_hex(c, factor) for c in hex_colors)
-    return f'linear-gradient({angle}deg, {stops})'
-
 def build_theme_style(student):
     """يبني كتلة CSS كاملة (:root overrides) بناءً على لون/تدرج الطالب المفعّل،
     بالإضافة إلى تجاوزات الوضع الفاتح (إن كان مفعّلاً) وزر تبديل الوضع العائم"""
@@ -49,14 +44,12 @@ def build_theme_style(student):
     if tc:
         if tc.startswith('grad:'):
             try:
-                colors = [c.strip() for c in tc[5:].split(',') if c.strip()]
-                if len(colors) < 2:
-                    raise ValueError('عدد ألوان غير كافٍ للتدرج')
-                gold, gold_light = colors[0], colors[-1]
-                primary = build_gradient_css(colors, 0.5)
-                primary_light = build_gradient_css(colors, 0.7)
-                primary_dark = build_gradient_css(colors, 0.22)
-                gold_glow = colors[0] + '26'
+                c1, c2 = tc[5:].split(',')
+                gold, gold_light = c1, c2
+                primary = f'linear-gradient(135deg, {shade_hex(c1, 0.5)}, {shade_hex(c2, 0.5)})'
+                primary_light = f'linear-gradient(135deg, {shade_hex(c1, 0.7)}, {shade_hex(c2, 0.7)})'
+                primary_dark = f'linear-gradient(135deg, {shade_hex(c1, 0.22)}, {shade_hex(c2, 0.22)})'
+                gold_glow = c1 + '26'
                 css_parts.append(
                     ':root{'
                     f'--gold:{gold} !important;--gold-light:{gold_light} !important;--gold-glow:{gold_glow} !important;'
@@ -103,29 +96,16 @@ def build_theme_style(student):
     return style_block + toggle_html
 
 def build_row_bg_style(theme_color):
-    """لون خلفية غامقة (وليست باهتة) لسطر الطالب في الصدارة بناءً على لونه/تدرجه المفعّل"""
+    """لون خلفية خفيف لسطر الطالب في الصدارة بناءً على لونه/تدرجه المفعّل"""
     if not theme_color:
         return ''
     if theme_color.startswith('grad:'):
         try:
-            colors = [c.strip() for c in theme_color[5:].split(',') if c.strip()]
-            if len(colors) < 2:
-                return ''
+            c1, c2 = theme_color[5:].split(',')
         except Exception:
             return ''
-        return f'background:{build_gradient_css(colors, 0.28, angle=90)} !important;'
+        return f'background:linear-gradient(90deg, {shade_hex(c1, 0.3)}, {shade_hex(c2, 0.3)}) !important;'
     return f'background:{shade_hex(theme_color, 0.28)} !important;'
-
-def build_owned_color_card_style(hex_color, is_active=False):
-    """خلفية غامقة (وليست باهتة) لبطاقة اللون في المتجر عند امتلاكه/تفعيله،
-    بدلاً من الخلفية الزجاجية الباهتة الافتراضية"""
-    if not hex_color:
-        return ''
-    dark_bg = shade_hex(hex_color, 0.32 if is_active else 0.22)
-    border = hex_color if is_active else shade_hex(hex_color, 0.6)
-    return f'background:{dark_bg} !important;border-color:{border} !important;'
-
-app.jinja_env.globals['owned_color_card_style'] = build_owned_color_card_style
 
 app.jinja_env.filters['shade'] = shade_hex
 app.jinja_env.globals['theme_style'] = build_theme_style
@@ -1950,17 +1930,7 @@ STORE_COLORS = [
     {'id': 'mint',     'name': 'نعناعي',             'hex': '#059669', 'price': 250},
     {'id': 'slate',    'name': 'رمادي فولاذي',       'hex': '#475569', 'price': 250},
 ]
-GRADIENT_PRICE = 500          # سعر دمج لونين في تدرج
-GRADIENT_PRICE_PER_EXTRA = 200 # تكلفة إضافية لكل لون إضافي بعد اللونين الأساسيين
-GRADIENT_MIN_COLORS = 2
-GRADIENT_MAX_COLORS = 5
-
-def get_gradient_price(colors_count):
-    """سعر دمج تدرج بحسب عدد الألوان المُدمجة (لونان فأكثر)"""
-    colors_count = max(GRADIENT_MIN_COLORS, min(GRADIENT_MAX_COLORS, colors_count or GRADIENT_MIN_COLORS))
-    return GRADIENT_PRICE + (colors_count - GRADIENT_MIN_COLORS) * GRADIENT_PRICE_PER_EXTRA
-
-app.jinja_env.globals['get_gradient_price'] = get_gradient_price
+GRADIENT_PRICE = 500
 
 def get_owned_color_ids(student):
     """قائمة معرّفات الألوان التي يملكها الطالب (اللون الافتراضي مملوك دائماً)"""
@@ -2005,47 +1975,36 @@ def buy_theme_color(student_id, color_id):
     )
     return True, 'تم شراء اللون وتفعيله'
 
-def buy_theme_gradient(student_id, color_ids):
-    """شراء تدرج بين لونين أو أكثر (حتى 5 ألوان) مملوكين وتفعيله"""
-    # إزالة التكرار مع الحفاظ على الترتيب الذي اختاره الطالب
-    seen = set()
-    color_ids = [c for c in color_ids if c and not (c in seen or seen.add(c))]
+def buy_theme_gradient(student_id, color_id_1, color_id_2):
+    """شراء تدرج بين لونين مملوكين وتفعيله (500 نقطة)"""
+    if color_id_1 == color_id_2:
+        return False, 'الرجاء اختيار لونين مختلفين'
 
-    if len(color_ids) < GRADIENT_MIN_COLORS:
-        return False, 'الرجاء اختيار لونين مختلفين على الأقل'
-    if len(color_ids) > GRADIENT_MAX_COLORS:
-        return False, f'الحد الأقصى {GRADIENT_MAX_COLORS} ألوان في التدرج الواحد'
-
-    colors = []
-    for cid in color_ids:
-        c = next((c for c in STORE_COLORS if c['id'] == cid), None)
-        if not c:
-            return False, 'لون غير موجود'
-        colors.append(c)
+    c1 = next((c for c in STORE_COLORS if c['id'] == color_id_1), None)
+    c2 = next((c for c in STORE_COLORS if c['id'] == color_id_2), None)
+    if not c1 or not c2:
+        return False, 'لون غير موجود'
 
     student = get_student_by_id(student_id)
     if not student:
         return False, 'الطالب غير موجود'
 
     owned_ids = get_owned_color_ids(student)
-    missing = [c['name'] for c in colors if c['id'] not in owned_ids]
-    if missing:
-        return False, f'يجب امتلاك جميع الألوان أولاً قبل دمجها في تدرج ({", ".join(missing)})'
+    if color_id_1 not in owned_ids or color_id_2 not in owned_ids:
+        return False, 'يجب امتلاك اللونين أولاً قبل دمجهما في تدرج'
 
-    pair_key = '-'.join(sorted(color_ids))
+    pair_key = '-'.join(sorted([color_id_1, color_id_2]))
     owned_pairs = get_owned_gradient_pairs(student)
-    theme_value = 'grad:' + ','.join(c['hex'] for c in colors)
-    price = get_gradient_price(len(colors))
+    theme_value = f"grad:{c1['hex']},{c2['hex']}"
 
     if pair_key in owned_pairs:
         execute_query("UPDATE students SET theme_color = ? WHERE id = ?", (theme_value, student_id))
         return True, 'تم تفعيل التدرج'
 
-    if student['points'] < price:
+    if student['points'] < GRADIENT_PRICE:
         return False, 'نقاط غير كافية'
 
-    names = ' × '.join(c['name'] for c in colors)
-    deduct_points(student_id, price, f"شراء تدرج ألوان ({len(colors)}): {names}")
+    deduct_points(student_id, GRADIENT_PRICE, f"شراء تدرج ألوان: {c1['name']} × {c2['name']}")
     owned_pairs.append(pair_key)
     execute_query(
         "UPDATE students SET theme_color = ?, owned_theme_gradients = ? WHERE id = ?",
@@ -17027,26 +16986,6 @@ ASSISTANT_DASHBOARD_HTML = r'''
             background: rgba(201,162,39,0.1);
             color: var(--gold-light);
             border: 1px solid rgba(201,162,39,0.2);
-            text-decoration: none;
-            display: inline-flex;
-            align-items: center;
-            gap: 5px;
-            transition: all 0.2s ease;
-        }
-
-        a.perm-tag {
-            cursor: pointer;
-        }
-
-        a.perm-tag:hover {
-            background: rgba(201,162,39,0.22);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 12px rgba(0,0,0,0.25);
-        }
-
-        .perm-tag .perm-tag-arrow {
-            font-size: 11px;
-            opacity: 0.7;
         }
 
         .perm-tag.perm-admin {
@@ -17055,18 +16994,10 @@ ASSISTANT_DASHBOARD_HTML = r'''
             border-color: rgba(168,85,247,0.2);
         }
 
-        a.perm-tag.perm-admin:hover {
-            background: rgba(168,85,247,0.28);
-        }
-
         .perm-tag.perm-high {
             background: rgba(74,222,128,0.1);
             color: var(--success);
             border-color: rgba(74,222,128,0.2);
-        }
-
-        a.perm-tag.perm-high:hover {
-            background: rgba(74,222,128,0.22);
         }
 
         /* ==========================================
@@ -17427,16 +17358,9 @@ ASSISTANT_DASHBOARD_HTML = r'''
             </div>
             <div class="perm-list">
                 {% for p in perms %}
-                    {% set tag_class = 'perm-tag ' + ('perm-admin' if p == 'view_all' else ('perm-high' if p in ['manage_evaluation', 'manage_competitions'] else '')) %}
-                    {% if perm_links.get(p) %}
-                    <a href="{{ perm_links[p] }}" class="{{ tag_class }}" title="الذهاب إلى صفحة هذه المهمة في لوحة المسؤول">
-                        {{ perm_labels.get(p, p) }}<span class="perm-tag-arrow">↗</span>
-                    </a>
-                    {% else %}
-                    <span class="{{ tag_class }}">
-                        {{ perm_labels.get(p, p) }}
-                    </span>
-                    {% endif %}
+                <span class="perm-tag {% if p == 'view_all' %}perm-admin{% elif p in ['manage_evaluation', 'manage_competitions'] %}perm-high{% endif %}">
+                    {{ perm_labels.get(p, p) }}
+                </span>
                 {% else %}
                 <span style="color:var(--text-muted);">لا توجد صلاحيات محددة</span>
                 {% endfor %}
@@ -24369,14 +24293,12 @@ STUDENT_STORE_HTML = r'''
         <div class="tab-content" id="tab-colors">
             <div class="books-grid" style="display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:16px;">
                 {% for color in store_colors %}
-                {% set is_active = student and student.theme_color == color.hex %}
-                {% set is_owned = color.id in owned_color_ids %}
-                <div class="book-card" style="text-align:center;padding:16px;{% if is_owned %}{{ owned_color_card_style(color.hex, is_active) }}{% endif %}">
+                <div class="book-card" style="text-align:center;padding:16px;">
                     <div style="width:60px;height:60px;border-radius:50%;margin:0 auto 10px;background:{{ color.hex }};border:3px solid rgba(255,255,255,0.25);box-shadow:0 4px 12px rgba(0,0,0,0.3);"></div>
                     <div class="title">{{ color.name }}</div>
-                    {% if is_active %}
+                    {% if student and student.theme_color == color.hex %}
                     <div class="price" style="color:#4ade80;">✅ مُفعّل حالياً</div>
-                    {% elif is_owned %}
+                    {% elif color.id in owned_color_ids %}
                     <div class="price">تملكه بالفعل</div>
                     <button class="btn btn-primary btn-sm" onclick="activateColor('{{ color.id }}')" style="margin-top:8px;width:100%;">تفعيل</button>
                     {% else %}
@@ -24388,24 +24310,24 @@ STUDENT_STORE_HTML = r'''
             </div>
 
             <div style="margin-top:28px;padding:18px;border:1px dashed rgba(201,162,39,0.35);border-radius:14px;">
-                <h3 style="margin-bottom:6px;">🌈 دمج تدرج من لونين حتى {{ gradient_max_colors }} ألوان</h3>
-                <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px;">اختر لونين أو أكثر (حتى {{ gradient_max_colors }}) تملكهما بالفعل لدمجهما في تدرج مميّز لواجهتك. كل لون إضافي بعد الثاني يزيد السعر {{ gradient_price_per_extra }} نقطة.</p>
+                <h3 style="margin-bottom:6px;">🌈 دمج تدرج بين لونين ({{ gradient_price }} نقطة)</h3>
+                <p style="color:var(--text-muted);font-size:13px;margin-bottom:14px;">اختر لونين تملكهما بالفعل لدمجهما في تدرج مميّز لواجهتك.</p>
                 {% if owned_color_ids|length < 2 %}
                 <p style="color:var(--text-muted);">تحتاج امتلاك لونين على الأقل قبل صنع تدرج بينهما.</p>
                 {% else %}
-                <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:14px;">
-                    {% for color in store_colors %}{% if color.id in owned_color_ids %}
-                    <label style="display:flex;align-items:center;gap:6px;padding:8px 12px;border-radius:10px;border:1px solid var(--glass-border);background:var(--glass);cursor:pointer;">
-                        <input type="checkbox" class="gradient-color-check" value="{{ color.id }}" onchange="updateGradientPreview()">
-                        <span style="width:16px;height:16px;border-radius:50%;display:inline-block;background:{{ color.hex }};border:1px solid rgba(255,255,255,0.3);"></span>
-                        {{ color.name }}
-                    </label>
-                    {% endif %}{% endfor %}
-                </div>
-                <div id="gradientPreviewBar" style="height:14px;border-radius:8px;margin-bottom:10px;background:transparent;border:1px solid var(--glass-border);"></div>
                 <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center;">
-                    <span id="gradientPriceLabel" style="font-weight:700;color:var(--gold-light);">اختر لونين على الأقل</span>
-                    <button id="buyGradientBtn" class="btn btn-gold btn-sm" onclick="buyGradient()" disabled>🌈 شراء ودمج</button>
+                    <select id="gradientColor1" style="padding:8px 12px;border-radius:8px;">
+                        {% for color in store_colors %}{% if color.id in owned_color_ids %}
+                        <option value="{{ color.id }}">{{ color.name }}</option>
+                        {% endif %}{% endfor %}
+                    </select>
+                    <span>×</span>
+                    <select id="gradientColor2" style="padding:8px 12px;border-radius:8px;">
+                        {% for color in store_colors %}{% if color.id in owned_color_ids %}
+                        <option value="{{ color.id }}">{{ color.name }}</option>
+                        {% endif %}{% endfor %}
+                    </select>
+                    <button class="btn btn-gold btn-sm" onclick="buyGradient()">🌈 شراء ودمج ({{ gradient_price }} نقطة)</button>
                 </div>
                 {% endif %}
             </div>
@@ -24573,14 +24495,6 @@ STUDENT_STORE_HTML = r'''
          * ==========================================
          */
 
-        const GRADIENT_BASE_PRICE = {{ gradient_price }};
-        const GRADIENT_PRICE_PER_EXTRA = {{ gradient_price_per_extra }};
-        const GRADIENT_MAX_COLORS = {{ gradient_max_colors }};
-        const COLOR_HEX_MAP = {
-            {% for color in store_colors %}"{{ color.id }}": "{{ color.hex }}"{% if not loop.last %},{% endif %}
-            {% endfor %}
-        };
-
         function showToast(type, title, message) {
             const toast = document.getElementById('toast');
             toast.className = 'toast show ' + type;
@@ -24679,48 +24593,18 @@ STUDENT_STORE_HTML = r'''
                 });
         }
 
-        function getSelectedGradientColors() {
-            return Array.from(document.querySelectorAll('.gradient-color-check:checked')).map(function(el) { return el.value; });
-        }
-
-        function updateGradientPreview() {
-            const ids = getSelectedGradientColors();
-            const priceEl = document.getElementById('gradientPriceLabel');
-            const previewEl = document.getElementById('gradientPreviewBar');
-            const buyBtn = document.getElementById('buyGradientBtn');
-            if (!priceEl) return;
-
-            if (ids.length < 2) {
-                priceEl.textContent = 'اختر لونين على الأقل';
-                if (previewEl) previewEl.style.background = 'transparent';
-                if (buyBtn) buyBtn.disabled = true;
-                return;
-            }
-
-            const price = GRADIENT_BASE_PRICE + Math.max(0, ids.length - 2) * GRADIENT_PRICE_PER_EXTRA;
-            priceEl.textContent = '🌈 ' + ids.length + ' ألوان — ' + price + ' نقطة';
-            if (buyBtn) buyBtn.disabled = false;
-
-            if (previewEl) {
-                const hexes = ids.map(function(id) { return COLOR_HEX_MAP[id]; }).filter(Boolean);
-                previewEl.style.background = 'linear-gradient(90deg, ' + hexes.join(', ') + ')';
-            }
-        }
-
         function buyGradient() {
-            const ids = getSelectedGradientColors();
-            if (ids.length < 2) {
-                showToast('error', '❌ خطأ', 'الرجاء اختيار لونين مختلفين على الأقل');
+            const c1 = document.getElementById('gradientColor1').value;
+            const c2 = document.getElementById('gradientColor2').value;
+            if (!c1 || !c2 || c1 === c2) {
+                showToast('error', '❌ خطأ', 'الرجاء اختيار لونين مختلفين');
                 return;
             }
-            if (ids.length > GRADIENT_MAX_COLORS) {
-                showToast('error', '❌ خطأ', 'الحد الأقصى ' + GRADIENT_MAX_COLORS + ' ألوان في التدرج الواحد');
-                return;
-            }
-            if (!confirm('🌈 تأكيد شراء ودمج تدرج من ' + ids.length + ' ألوان؟')) return;
+            if (!confirm('🌈 تأكيد شراء ودمج هذا التدرج؟')) return;
 
             const formData = new FormData();
-            ids.forEach(function(id) { formData.append('colors[]', id); });
+            formData.append('color1', c1);
+            formData.append('color2', c2);
 
             fetch('/student/store/buy_gradient', { method: 'POST', body: formData })
                 .then(function(r) { return r.json(); })
@@ -25669,115 +25553,9 @@ def admin_session_history():
 @app.route('/student/assistant')
 @login_required('student')
 def student_assistant():
-    """لوحة المساعد: تعرض صلاحيات المساعد الممنوحة، كل صلاحية كرابط مباشر
-    يقود إلى صفحة المسؤول الخاصة بتلك المهمة بالتحديد، بالإضافة إلى مهامه
-    الموكلة وسجل مكافآته وإحصائياته"""
-    student = get_current_user()
-    assistant_info = get_assistant_by_student_id(session['user_id'])
-    if not assistant_info:
-        flash('ليست لديك صلاحيات مساعد', 'danger')
-        return redirect(url_for('student_dashboard'))
-
-    perms = [p.strip() for p in (assistant_info.get('permissions') or '').split(',') if p.strip()]
-
-    # تسميات عربية لكل صلاحية (نفس التسميات المستخدمة في صفحة إدارة المساعدين)
-    perm_labels = {
-        'view_students': '👁️ عرض الطلاب',
-        'send_messages': '💬 إرسال رسائل',
-        'grade_homework': '📚 تقييم واجبات',
-        'manage_evaluation': '📊 تقييم يومي',
-        'manage_competitions': '🏆 إدارة مسابقات',
-        'view_analytics': '📈 عرض تحليلات',
-        'manage_students': '👨‍🎓 إدارة الطلاب',
-        'manage_attendance': '📋 إدارة الحضور',
-        'manage_sessions': '🗂️ إدارة الحصص',
-        'export_data': '📥 تصدير البيانات',
-        'manage_reports': '📊 إدارة التقارير',
-        'manage_announcements': '📢 إدارة الإعلانات',
-        'manage_events': '🎪 إدارة الفعاليات',
-        'manage_badges': '🏅 إدارة الشارات',
-        'view_all': '👑 صلاحيات كاملة',
-    }
-
-    # ربط كل صلاحية بالصفحة الإدارية المخصصة لها (اسم الدالة/المسار في Flask)
-    perm_endpoints = {
-        'view_students': 'manage_students',
-        'send_messages': 'admin_messages',
-        'grade_homework': 'homework',
-        'manage_evaluation': 'evaluation',
-        'manage_competitions': 'competitions',
-        'view_analytics': 'admin_analytics',
-        'manage_students': 'manage_students',
-        'manage_attendance': 'evaluation',
-        'manage_sessions': 'evaluation',
-        'export_data': 'admin_analytics',
-        'manage_reports': 'admin_analytics',
-        'manage_announcements': 'admin_messages',
-        'manage_events': 'competitions',
-        'manage_badges': 'manage_students',
-        'view_all': 'admin_dashboard',
-    }
-
-    perm_links = {}
-    for p in perms:
-        endpoint = perm_endpoints.get(p)
-        if endpoint:
-            try:
-                perm_links[p] = url_for(endpoint)
-            except Exception:
-                pass
-
-    xp_history = get_assistant_xp_history(assistant_info['id'])
-    tasks = get_assistant_tasks(assistant_info['id'])
-    completed_tasks = len([t for t in tasks if t.get('status') == 'completed'])
-    pending_tasks = len([t for t in tasks if t.get('status') != 'completed'])
-
-    has_view_students = 'view_students' in perms or 'manage_students' in perms or 'view_all' in perms
-    students = get_active_students() if has_view_students else []
-
-    has_eval_access = 'manage_evaluation' in perms or 'manage_attendance' in perms or 'view_all' in perms
-    recent_evaluations = []
-    if has_eval_access:
-        recent_evaluations = query_all("""
-            SELECT de.*, s.name as student_name
-            FROM daily_evaluations de
-            JOIN students s ON s.id = de.student_id
-            ORDER BY de.date DESC, de.created_at DESC
-            LIMIT 15
-        """)
-
-    has_comp_access = 'manage_competitions' in perms or 'manage_events' in perms or 'view_all' in perms
-    active_competitions = []
-    if has_comp_access:
-        active_competitions = query_all("""
-            SELECT c.*, (SELECT COUNT(*) FROM competition_grades WHERE competition_id = c.id) as participants_count
-            FROM competitions c
-            WHERE c.active = 1
-            ORDER BY c.date DESC
-            LIMIT 10
-        """)
-
-    total_students = query_one("SELECT COUNT(*) as c FROM students WHERE status = 'active'")['c']
-    stats = {
-        'total_students': total_students,
-        'completed_tasks': completed_tasks,
-        'pending_tasks': pending_tasks,
-        'total_xp': assistant_info.get('xp_points', 0),
-    }
-
-    return render_template_string(ASSISTANT_DASHBOARD_HTML,
-                                   student=student,
-                                   assistant_info=assistant_info,
-                                   perms=perms,
-                                   perm_labels=perm_labels,
-                                   perm_links=perm_links,
-                                   xp_history=xp_history,
-                                   tasks=tasks,
-                                   students=students,
-                                   recent_evaluations=recent_evaluations,
-                                   active_competitions=active_competitions,
-                                   stats=stats,
-                                   datetime=datetime)
+    """لوحة المساعد (قيد التطوير)"""
+    flash('هذه الميزة قيد التطوير حالياً', 'info')
+    return redirect(url_for('student_dashboard'))
 @app.route('/logout')
 def logout():
     """تسجيل الخروج"""
@@ -26623,13 +26401,9 @@ def competitions():
             if grade:
                 grades_by_student[student['id']][comp['id']] = grade
     
-    # جلب المنسحبين
-    withdrawn_students = []
-    for comp in competitions_list:
-        if isinstance(comp, dict) and comp.get('participants'):
-            for p in comp['participants']:
-                if isinstance(p, dict) and p.get('withdrawn'):
-                    withdrawn_students.append(p['student_id'])
+    # جلب المنسحبين (أي طالب منسحب من مسابقة واحدة على الأقل)
+    withdrawn_rows = query_all("SELECT DISTINCT student_id FROM competition_grades WHERE withdrawn = 1")
+    withdrawn_students = [row['student_id'] for row in withdrawn_rows]
     
     return render_template_string(COMPETITIONS_HTML,
                                    competitions=competitions_list,
@@ -26638,6 +26412,52 @@ def competitions():
                                    withdrawn_students=withdrawn_students,
                                    datetime=datetime,
                                    timedelta=timedelta)
+@app.route('/admin/competitions/withdraw', methods=['POST'])
+@login_required('admin')
+def withdraw_competition_student():
+    """انسحاب طالب من مسابقة محددة، أو من جميع مسابقاته إذا لم يُحدد competition_id"""
+    data = request.get_json(silent=True) or {}
+    student_id = data.get('student_id')
+    competition_id = data.get('competition_id')
+
+    if not student_id:
+        return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
+
+    if competition_id:
+        execute_query(
+            "UPDATE competition_grades SET withdrawn = 1 WHERE student_id = ? AND competition_id = ?",
+            (student_id, competition_id)
+        )
+    else:
+        execute_query(
+            "UPDATE competition_grades SET withdrawn = 1 WHERE student_id = ?",
+            (student_id,)
+        )
+
+    return jsonify({'success': True, 'message': 'تم انسحاب الطالب بنجاح'})
+@app.route('/admin/competitions/unwithdraw', methods=['POST'])
+@login_required('admin')
+def unwithdraw_competition_student():
+    """إلغاء انسحاب طالب من مسابقة محددة، أو من جميع مسابقاته إذا لم يُحدد competition_id"""
+    data = request.get_json(silent=True) or {}
+    student_id = data.get('student_id')
+    competition_id = data.get('competition_id')
+
+    if not student_id:
+        return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
+
+    if competition_id:
+        execute_query(
+            "UPDATE competition_grades SET withdrawn = 0 WHERE student_id = ? AND competition_id = ?",
+            (student_id, competition_id)
+        )
+    else:
+        execute_query(
+            "UPDATE competition_grades SET withdrawn = 0 WHERE student_id = ?",
+            (student_id,)
+        )
+
+    return jsonify({'success': True, 'message': 'تم إلغاء انسحاب الطالب بنجاح'})
 @app.route('/admin/competitions/add', methods=['POST'])
 @login_required('admin')
 def add_competition():
@@ -28455,8 +28275,6 @@ def student_store():
                                    store_colors=STORE_COLORS,
                                    owned_color_ids=owned_color_ids,
                                    gradient_price=GRADIENT_PRICE,
-                                   gradient_price_per_extra=GRADIENT_PRICE_PER_EXTRA,
-                                   gradient_max_colors=GRADIENT_MAX_COLORS,
                                    datetime=datetime)
 @app.route('/student/store/buy/<int:book_id>', methods=['POST'])
 @login_required('student')
@@ -28486,18 +28304,11 @@ def activate_color_route(color_id):
 @app.route('/student/store/buy_gradient', methods=['POST'])
 @login_required('student')
 def buy_gradient_route():
-    """شراء/تفعيل تدرج بين لونين أو أكثر (حتى 5 ألوان) مملوكين"""
+    """شراء/تفعيل تدرج بين لونين مملوكين"""
     student = get_current_user()
-    # يدعم إرسال الألوان كحقول متعددة colors[] أو كنص مفصول بفواصل
-    color_ids = request.form.getlist('colors[]') or request.form.getlist('colors')
-    if not color_ids:
-        raw = request.form.get('colors', '')
-        color_ids = [c.strip() for c in raw.split(',') if c.strip()]
-    if not color_ids:
-        # توافق مع الشكل القديم (color1/color2) إن استُخدم
-        legacy = [request.form.get('color1', ''), request.form.get('color2', '')]
-        color_ids = [c for c in legacy if c]
-    ok, message = buy_theme_gradient(student['id'], color_ids)
+    color1 = request.form.get('color1', '')
+    color2 = request.form.get('color2', '')
+    ok, message = buy_theme_gradient(student['id'], color1, color2)
     return jsonify({'success': ok, 'message': message})
 @app.route('/student/profile/encrypt_info', methods=['POST'])
 @login_required('student')
@@ -28703,6 +28514,16 @@ def add_theme_color_column():
         print(f"⚠️ خطأ أثناء إضافة أعمدة متجر الألوان: {e}")
 
 add_theme_color_column()
+
+def add_competition_withdraw_column():
+    """إضافة عمود الانسحاب من المسابقات (يُستخدم في ميزة انسحاب/إلغاء انسحاب الطالب)"""
+    try:
+        execute_query("ALTER TABLE competition_grades ADD COLUMN IF NOT EXISTS withdrawn INTEGER DEFAULT 0")
+        print("✅ تم التأكد من وجود عمود الانسحاب في جدول درجات المسابقات")
+    except Exception as e:
+        print(f"⚠️ خطأ أثناء إضافة عمود الانسحاب: {e}")
+
+add_competition_withdraw_column()
 
 def grant_bonus_xp_once(email, amount, reason):
     """منح نقاط XP لمرة واحدة فقط لطالب محدد عبر بريده الإلكتروني (لا تتكرر عند
