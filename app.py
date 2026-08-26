@@ -472,6 +472,10 @@ def deduct_points(student_id, amount, reason):
         return False
     
     return add_points(student_id, amount, reason, 'spent')
+def get_student_points(student_id):
+    """الحصول على رصيد نقاط الطالب الحالي"""
+    row = query_one("SELECT points FROM students WHERE id = ?", (student_id,))
+    return row['points'] if row and row.get('points') is not None else 0
 # منحة XP الشهرية بحسب مستوى الطالب (كلما ارتفع المستوى، ارتفعت المنحة)
 MONTHLY_XP_GRANT_BY_LEVEL = {
     1: 500,
@@ -11024,7 +11028,8 @@ ADMIN_PROMOTIONS_HTML = r'''
         .btn-gold { background: linear-gradient(135deg, var(--gold), var(--gold-light)); color: #1a1a1a; }
         .btn-sm { padding: 4px 12px; font-size: 12px; }
         .nav-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; padding: 10px 16px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; }
-        .nav-bar a { color: var(--text-muted); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; }
+        .nav-bar a { color: var(--text-muted); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; transition: all 0.3s ease; }
+        .nav-bar a:hover { background: rgba(255,255,255,0.04); color: var(--text-primary); }
         .nav-bar a.active { background: var(--gold); color: #1a1a1a; }
         .filter-tabs { display: flex; gap: 6px; margin-bottom: 16px; flex-wrap: wrap; }
         .filter-tabs a { padding: 6px 16px; border-radius: 20px; font-size: 12px; text-decoration: none; color: var(--text-muted); border: 1px solid var(--glass-border); }
@@ -11047,8 +11052,17 @@ ADMIN_PROMOTIONS_HTML = r'''
     <div class="nav-bar">
         <a href="{{ url_for('admin_dashboard') }}">📊 الرئيسية</a>
         <a href="{{ url_for('manage_students') }}">👨‍🎓 الطلاب</a>
-        <a href="{{ url_for('admin_promotions') }}" class="active">🎖️ الترقيات</a>
+        <a href="{{ url_for('registration_requests') }}">📝 طلبات</a>
+        <a href="{{ url_for('evaluation') }}">📊 تقييم</a>
+        <a href="{{ url_for('homework') }}">📚 واجبات</a>
+        <a href="{{ url_for('competitions') }}">🏆 مسابقات</a>
         <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
+        <a href="{{ url_for('admin_promotions') }}" class="active">🎖️ الترقيات</a>
+        <a href="{{ url_for('admin_session_history') }}">🗂️ سجل الحصص</a>
+        <a href="{{ url_for('admin_analytics') }}">📈 تحليلات</a>
+        <a href="{{ url_for('admin_assistants') }}">🧑‍🤝‍🧑 مساعدين</a>
+        <a href="{{ url_for('admin_duels') }}">⚔️ تحديات</a>
+        <a href="{{ url_for('admin_store') }}">🛍️ متجر</a>
     </div>
     <div class="filter-tabs">
         <a href="{{ url_for('admin_promotions') }}" class="{{ 'active' if not current_status }}">📋 الكل</a>
@@ -23196,7 +23210,12 @@ STUDENT_MEMORIZATION_HTML = r'''
         .header h1 { font-size: 20px; font-weight: 800; }
         .btn { padding: 7px 16px; border: none; border-radius: 8px; font-weight: 600; font-size: 13px; cursor: pointer; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; font-family: inherit; }
         .btn-outline { background: transparent; border: 1.5px solid var(--glass-border); color: var(--text-secondary); }
+        .btn-danger { background: var(--danger); color: #fff; }
         .btn-gold { background: linear-gradient(135deg, var(--gold-light), var(--gold)); color: #16211f; }
+        .nav-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; padding: 10px 16px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; }
+        .nav-bar a { color: var(--text-muted); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; transition: all 0.3s ease; }
+        .nav-bar a:hover { background: rgba(255,255,255,0.04); color: var(--text-primary); }
+        .nav-bar a.active { background: var(--gold); color: #1a1a1a; }
         .summary { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 16px; padding: 22px; text-align: center; margin-bottom: 18px; }
         .summary .num { font-size: 40px; font-weight: 900; background: linear-gradient(135deg, var(--gold-light), var(--gold)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }
         .summary .lbl { font-size: 13px; color: var(--text-muted); margin-top: 4px; }
@@ -23219,7 +23238,23 @@ STUDENT_MEMORIZATION_HTML = r'''
 <body>
     {{ theme_style(student)|safe }}
 <div class="container">
-    <div class="header"><h1>📖 سوري المحفوظة</h1><a href="{{ url_for('student_level') }}" class="btn btn-outline">⬅ مستواي</a></div>
+    <div class="header"><h1>📖 سوري المحفوظة</h1><div style="display:flex;gap:8px;flex-wrap:wrap;"><a href="{{ url_for('student_level') }}" class="btn btn-outline">⬅ مستواي</a><a href="{{ url_for('logout') }}" class="btn btn-danger">🚪 خروج</a></div></div>
+
+    <div class="nav-bar">
+        <a href="{{ url_for('student_dashboard') }}">📊 الرئيسية</a>
+        <a href="{{ url_for('student_homework') }}">📚 واجباتي</a>
+        <a href="{{ url_for('student_report') }}">📊 تقريري</a>
+        <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
+        <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
+        <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+        <a href="{{ url_for('student_memorization') }}" class="active">📖 سوري المحفوظة</a>
+        {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
+        <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
+        <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
+        <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
+        <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
+        {% if assistant_info %}<a href="{{ url_for('student_assistant') }}" style="color:var(--gold-light);">🧑‍🤝‍🧑 لوحة المساعد</a>{% endif %}
+    </div>
 
     {% if pending_count > 0 %}
     <div class="pending-banner">⏳ عندك {{ pending_count }} سورة بانتظار مصادقة المشرف، لا تُحسب حتى يتم تأكيدها</div>
@@ -23391,6 +23426,7 @@ STUDENT_LEVEL_HTML = r'''
         <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
         <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
         <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
+        {% if assistant_info %}<a href="{{ url_for('student_assistant') }}" style="color:var(--gold-light);">🧑‍🤝‍🧑 لوحة المساعد</a>{% endif %}
     </div>
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% for category, msg in messages %}<div class="flash-msg {{ category }}">{{ msg }}</div>{% endfor %}
@@ -23512,7 +23548,8 @@ STUDENT_PROMOTIONS_HTML = r'''
         .btn-gold { background: linear-gradient(135deg, var(--gold), var(--gold-light)); color: #1a1a1a; }
         .btn-sm { padding: 4px 12px; font-size: 12px; }
         .nav-bar { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; padding: 10px 16px; background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; }
-        .nav-bar a { color: var(--text-muted); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; }
+        .nav-bar a { color: var(--text-muted); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; transition: all 0.3s ease; }
+        .nav-bar a:hover { background: rgba(255,255,255,0.04); color: var(--text-primary); }
         .nav-bar a.active { background: var(--gold); color: #1a1a1a; }
         .card { background: var(--glass); border: 1px solid var(--glass-border); border-radius: 14px; padding: 18px 20px; margin-bottom: 14px; }
         .card h4 { font-size: 15px; margin-bottom: 6px; }
@@ -23532,9 +23569,18 @@ STUDENT_PROMOTIONS_HTML = r'''
     <div class="header"><h1>⚖️ طلبات التقييم الموكلة إليّ</h1><div><a href="{{ url_for('student_level') }}" class="btn btn-outline btn-sm">⬅ مستواي</a> <a href="{{ url_for('logout') }}" class="btn btn-danger btn-sm">🚪 خروج</a></div></div>
     <div class="nav-bar">
         <a href="{{ url_for('student_dashboard') }}">📊 الرئيسية</a>
+        <a href="{{ url_for('student_homework') }}">📚 واجباتي</a>
+        <a href="{{ url_for('student_report') }}">📊 تقريري</a>
+        <a href="{{ url_for('student_competitions') }}">🏆 مسابقاتي</a>
+        <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
         <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
         <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
         {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}" class="active">⚖️ طلبات التقييم</a>{% endif %}
+        <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
+        <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
+        <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
+        <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
+        {% if assistant_info %}<a href="{{ url_for('student_assistant') }}" style="color:var(--gold-light);">🧑‍🤝‍🧑 لوحة المساعد</a>{% endif %}
     </div>
     {% with messages = get_flashed_messages(with_categories=true) %}
         {% for category, msg in messages %}<div class="flash-msg {{ category }}">{{ msg }}</div>{% endfor %}
@@ -27934,13 +27980,17 @@ def student_memorization():
     # حساب عدد الأجزاء المكتملة (للعرض في مكان آخر، لكننا لن نعرضها هنا)
     juz_count, _ = compute_juz_count(memorized_ids)
 
+    # التحقق من صلاحيات المساعد
+    assistant_info = get_assistant_by_student_id(student['id'])
+
     return render_template_string(
         STUDENT_MEMORIZATION_HTML,
         student=student,
         surah_list=surah_list,
         memorized_count=len(memorized_ids),
         pending_count=len(pending_ids),
-        juz_count=juz_count  # اختياري لعرضه كإحصائية
+        juz_count=juz_count,  # اختياري لعرضه كإحصائية
+        assistant_info=assistant_info
     )
 @app.route('/student/memorization/submit', methods=['POST'])
 @login_required('student')
@@ -27989,6 +28039,8 @@ def student_level():
         'requirement_text': 'أعلى مستوى — الحافظ الأعظم',
         'status': 'done' if MAX_LEVEL < level else ('current' if MAX_LEVEL == level else 'locked'),
     })
+    # التحقق من صلاحيات المساعد
+    assistant_info = get_assistant_by_student_id(student['id'])
     return render_template_string(STUDENT_LEVEL_HTML,
                                    student=student,
                                    level=level,
@@ -28000,6 +28052,7 @@ def student_level():
                                    history=history,
                                    all_levels=all_levels,
                                    max_level=MAX_LEVEL,
+                                   assistant_info=assistant_info,
                                    datetime=datetime)
 @app.route('/student/level/request', methods=['POST'])
 @login_required('student')
@@ -28046,10 +28099,13 @@ def student_promotions():
             'from_name': get_level_name(req['from_level']),
             'to_name': get_level_name(req['to_level']),
         })
+    # التحقق من صلاحيات المساعد
+    assistant_info = get_assistant_by_student_id(student['id'])
     return render_template_string(STUDENT_PROMOTIONS_HTML,
                                    student=student,
                                    pending=pending_detailed,
                                    recommendation_options=RECOMMENDATION_OPTIONS,
+                                   assistant_info=assistant_info,
                                    datetime=datetime)
 @app.route('/student/promotions/<int:request_id>/recommend', methods=['POST'])
 @login_required('student')
