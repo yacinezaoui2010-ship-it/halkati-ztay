@@ -223,7 +223,9 @@ def column_exists(table_name, column_name):
 # ============================================================ #
 def login_required(role=None, assistant_permission=None):
     """مزخرف للتحقق من تسجيل الدخول مع دور محدد.
-    عند تحديد assistant_permission، يُسمح للمساعد (role='assistant') بدخول صفحة
+    ملاحظة: المساعدون يسجّلون الدخول كطلاب عاديين (session['role'] == 'student')،
+    فصلاحياتهم تُتحقق عبر سجلهم في جدول assistants وليس عبر قيمة الدور في الجلسة.
+    عند تحديد assistant_permission، يُسمح للطالب الذي لديه سجل مساعد نشط بدخول صفحة
     مخصصة للمشرف (role='admin') فقط إذا كانت لديه هذه الصلاحية فعلياً (أو صلاحية
     view_all)، بدلاً من منح كل المساعدين وصولاً كاملاً بغض النظر عن صلاحياتهم."""
     def decorator(f):
@@ -233,8 +235,8 @@ def login_required(role=None, assistant_permission=None):
                 flash('الرجاء تسجيل الدخول أولاً', 'danger')
                 return redirect(url_for('home'))
             if role and session.get('role') != role:
-                # التحقق من صلاحيات المساعد
-                if role == 'admin' and session.get('role') == 'assistant':
+                # التحقق من صلاحيات المساعد (طالب لديه سجل نشط في جدول assistants)
+                if role == 'admin' and session.get('role') in ('assistant', 'student') and is_active_assistant():
                     if assistant_permission is None or has_assistant_permission(assistant_permission):
                         return f(*args, **kwargs)
                     flash('غير مصرح لك بالوصول إلى هذه الصفحة (صلاحية غير ممنوحة)', 'danger')
@@ -253,6 +255,12 @@ def is_student():
 def is_assistant():
     """التحقق من أن المستخدم مساعد"""
     return session.get('role') == 'assistant'
+def is_active_assistant():
+    """هل المستخدم الحالي طالب لديه سجل صلاحيات مساعد نشط في جدول assistants؟
+    (بغض النظر عن قيمة الدور المخزنة في الجلسة، لأن المساعدين يسجّلون الدخول كطلاب)"""
+    if session.get('role') not in ('student', 'assistant'):
+        return False
+    return get_assistant_by_student_id(session.get('user_id')) is not None
 def get_current_user():
     """الحصول على بيانات المستخدم الحالي"""
     if 'user_id' not in session or not session.get('logged_in'):
@@ -278,12 +286,13 @@ def get_current_user():
         return student
     return None
 def has_assistant_permission(permission):
-    """التحقق من صلاحية المساعد"""
-    if session.get('role') != 'assistant' and session.get('role') != 'admin':
-        return False
-    
+    """التحقق من صلاحية المساعد. يعمل مع الطالب الذي مُنح صلاحيات مساعد (سجل نشط
+    في جدول assistants) بغض النظر عن قيمة الدور المخزنة في الجلسة، لأن المساعدين
+    يسجّلون الدخول عبر تسجيل دخول الطالب العادي (session['role'] == 'student')."""
     if session.get('role') == 'admin':
         return True
+    if session.get('role') not in ('student', 'assistant'):
+        return False
     
     assistant = query_one(
         "SELECT permissions FROM assistants WHERE student_id = ? AND active = 1",
@@ -26060,7 +26069,7 @@ def manage_students():
     """إدارة الطلاب"""
     if request.method == 'POST':
         # عرض الطلاب لا يعني الإذن بتعديلهم: نطلب صلاحية أعلى للمساعدين عند التعديل
-        if session.get('role') == 'assistant' and not has_assistant_permission('manage_students'):
+        if session.get('role') != 'admin' and not has_assistant_permission('manage_students'):
             flash('غير مصرح لك بتعديل بيانات الطلاب، لديك صلاحية العرض فقط', 'danger')
             return redirect(url_for('manage_students'))
         action = request.form.get('action', 'add')
