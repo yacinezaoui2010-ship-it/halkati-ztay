@@ -27866,7 +27866,9 @@ def student_competitions():
     for comp in competitions_list:
         comp['participated'] = 1 if comp.get('my_grade') is not None else 0
         comp['won'] = 1 if comp.get('my_rank') == 1 else 0
-        comp['completed'] = 1 if comp['date'] < get_today() else 0
+        comp_date = comp['date']
+        comp_date_str = comp_date.strftime('%Y-%m-%d') if hasattr(comp_date, 'strftime') else str(comp_date)
+        comp['completed'] = 1 if comp_date_str < get_today() else 0
     
     # التحقق من صلاحيات المساعد
     assistant_info = get_assistant_by_student_id(student['id'])
