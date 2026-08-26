@@ -1065,13 +1065,14 @@ def send_group_message(sender_id, sender_type, group_id, message, file_url=None)
     على group_id بدون تصفية حسب receiver_id. صف المرسل نفسه يُنشأ
     مقروءاً مسبقاً (is_read=1) حتى لا يُحتسب ضمن عداد رسائله الخاصة."""
     members = query_all("SELECT student_id FROM group_members WHERE group_id = ?", (group_id,))
+    sent_at = datetime.now()
     for member in members:
         is_sender_own_copy = (member['student_id'] == sender_id and sender_type == 'student')
         execute_query(
-            """INSERT INTO messages (sender_id, sender_type, receiver_id, receiver_type, message, file_url, is_group, group_id, is_read)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            """INSERT INTO messages (sender_id, sender_type, receiver_id, receiver_type, message, file_url, is_group, group_id, is_read, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (sender_id, sender_type, member['student_id'], 'student', message, file_url, 1, group_id,
-             1 if is_sender_own_copy else 0)
+             1 if is_sender_own_copy else 0, sent_at)
         )
     return True
 
@@ -1320,9 +1321,25 @@ def build_conversations_list(groups, contacts, admin_contact=None):
 
 def get_group_messages(group_id, order='DESC'):
     """رسائل مجموعة بترتيب زمني معيّن (DESC للعرض الحديث أولاً، ASC للعرض
-    التسلسلي كما في صفحة الطالب)."""
+    التسلسلي كما في صفحة الطالب).
+    كل رسالة مُرسلة للمجموعة تُخزَّن كسطر منفصل لكل عضو مستلم (لتتبّع حالة
+    القراءة الفردية)، لذا نُجمّع هنا هذه الأسطر بحيث تظهر كل رسالة مرة واحدة
+    فقط في الواجهة بدل تكرارها بعدد الأعضاء. is_read تكون صحيحة فقط إن
+    قرأها جميع المستلمين."""
     order = 'ASC' if order == 'ASC' else 'DESC'
-    return query_all(f"SELECT * FROM messages WHERE group_id = ? ORDER BY created_at {order}", (group_id,))
+    return query_all(f"""
+        SELECT MIN(m.id) as id, m.sender_id, m.sender_type, m.message, m.file_url,
+               m.is_group, m.group_id, m.created_at,
+               CASE WHEN MIN(m.is_read) = 1 THEN 1 ELSE 0 END as is_read,
+               MAX(m.is_delivered) as is_delivered,
+               CASE WHEN m.sender_type = 'student' THEN MIN(s.name) ELSE MIN(a.name) END as sender_name
+        FROM messages m
+        LEFT JOIN students s ON s.id = m.sender_id AND m.sender_type = 'student'
+        LEFT JOIN admins a ON a.id = m.sender_id AND m.sender_type = 'admin'
+        WHERE m.group_id = ?
+        GROUP BY m.sender_id, m.sender_type, m.message, m.file_url, m.is_group, m.group_id, m.created_at
+        ORDER BY m.created_at {order}
+    """, (group_id,))
 
 def send_message_common(sender_id, sender_type, force_receiver_type=None):
     """معالجة مشتركة لإرسال رسالة نصية (فردية أو جماعية) من مسارات /send
@@ -13955,6 +13972,7 @@ MESSAGES_HTML = r'''
                         {% if is_group %}
                         <button class="btn btn-outline btn-xs" onclick="openGroupMembersModal()">👥 أعضاء</button>
                         <button class="btn btn-outline btn-xs" onclick="leaveGroup('{{ selected_group.id }}')">🚪 مغادرة</button>
+                        <button class="btn btn-outline btn-xs" style="color:var(--danger,#ef4444);border-color:var(--danger,#ef4444);" onclick="deleteGroup('{{ selected_group.id }}')">🗑️ حذف المجموعة</button>
                         {% else %}
                         <button class="btn btn-outline btn-xs" onclick="openAddContactToGroupModal('{{ selected_contact.id }}')">➕ لمجموعة</button>
                         <button class="btn btn-outline btn-xs" onclick="showContactInfo('{{ selected_contact.id }}')">👤</button>
@@ -14466,6 +14484,27 @@ MESSAGES_HTML = r'''
                     if (data.success) {
                         showToast('success', '✅ تم', 'تم إرسال الرسالة الصوتية');
                         reloadPage();
+                    } else {
+                        showToast('error', '❌ خطأ', data.message || 'حدث خطأ');
+                    }
+                })
+                .catch(function() {
+                    showToast('error', '❌ خطأ', 'حدث خطأ في الاتصال');
+                });
+        }
+
+        function deleteGroup(groupId) {
+            if (!confirm('🗑️ هل أنت متأكد من حذف هذه المجموعة نهائياً؟ سيتم حذف جميع رسائلها ولا يمكن التراجع عن هذا الإجراء.')) return;
+
+            showToast('info', '⏳', 'جاري حذف المجموعة...');
+
+            apiRequest('/admin/messages/group/delete', 'POST', { group_id: groupId })
+                .then(function(data) {
+                    if (data.success) {
+                        showToast('success', '✅ تم', 'تم حذف المجموعة بنجاح');
+                        setTimeout(function() {
+                            window.location.href = '/admin/messages';
+                        }, 800);
                     } else {
                         showToast('error', '❌ خطأ', data.message || 'حدث خطأ');
                     }
@@ -27060,6 +27099,25 @@ def remove_group_member():
         (group_id, student_id)
     )
     return jsonify({'success': True, 'message': 'تمت إزالة الطالب من المجموعة'})
+@app.route('/admin/messages/group/delete', methods=['POST'])
+@login_required('admin', assistant_permission='send_messages')
+def delete_message_group():
+    """حذف مجموعة رسائل بالكامل: أعضاؤها وجميع رسائلها ثم المجموعة نفسها."""
+    data = request.get_json(silent=True) or request.form
+    group_id = data.get('group_id')
+
+    if not group_id:
+        return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
+
+    group = query_one("SELECT * FROM message_groups WHERE id = ?", (group_id,))
+    if not group:
+        return jsonify({'success': False, 'message': 'المجموعة غير موجودة'})
+
+    clear_group_messages(group_id)
+    execute_query("DELETE FROM group_members WHERE group_id = ?", (group_id,))
+    execute_query("DELETE FROM message_groups WHERE id = ?", (group_id,))
+
+    return jsonify({'success': True, 'message': 'تم حذف المجموعة بنجاح'})
 @app.route('/admin/messages/send_voice', methods=['POST'])
 @login_required('admin', assistant_permission='send_messages')
 def send_admin_voice():
@@ -28302,14 +28360,18 @@ def student_messages():
     elif selected_group_id:
         selected_group = get_group_with_members(selected_group_id, require_member_id=student['id'])
         if selected_group:
+            # كل رسالة تُخزَّن كسطر منفصل لكل عضو في المجموعة (لتتبّع حالة القراءة
+            # الفردية)، لذا نُقيّد الاستعلام بـ receiver_id = الطالب الحالي حتى
+            # يظهر لكل طالب سطره الخاص فقط (سواء كان هو المرسل أم المستقبل)
+            # بدل رؤية جميع نسخ الرسالة الموجهة لبقية الأعضاء أيضاً.
             messages = query_all("""
                 SELECT m.*, 
                        CASE WHEN m.sender_type = 'student' THEN s.name ELSE a.name END as sender_name
                 FROM messages m
                 LEFT JOIN students s ON s.id = m.sender_id AND m.sender_type = 'student'
                 LEFT JOIN admins a ON a.id = m.sender_id AND m.sender_type = 'admin'
-                WHERE m.group_id = ? ORDER BY m.created_at ASC
-            """, (selected_group_id,))
+                WHERE m.group_id = ? AND m.receiver_id = ? ORDER BY m.created_at ASC
+            """, (selected_group_id, student['id']))
             mark_group_read_for_user(selected_group_id, student['id'])
             is_group = True
             chat_id = selected_group_id
