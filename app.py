@@ -1043,58 +1043,41 @@ def notify_all_admins(message, sender_id=None, sender_type='student'):
     for a in query_all("SELECT id FROM admins"):
         notify_user(a['id'], 'admin', message, sender_id=sender_id, sender_type=sender_type)
 # ============================================================ #
-# ====== SECTION 6: MESSAGE HELPERS =========================== #
+# ====== SECTION 6: MESSAGING SYSTEM (unified) ================ #
 # ============================================================ #
+# ملاحظة عامة: جدولا admins و students منفصلان ومعرفاتهما (id) قد
+# تتطابق رقمياً بينهما. لهذا كل استعلام في هذا القسم يحدد receiver_type/
+# sender_type صراحة عوض الاعتماد على receiver_id/sender_id وحدهما، حتى لا
+# تختلط محادثة مع أخرى بالصدفة.
+
 def send_message(sender_id, sender_type, receiver_id, receiver_type, message, file_url=None):
-    """إرسال رسالة
-    ملاحظة مهمة: receiver_type إجباري لأن جدولي admins و students مستقلان
-    ومعرفاتهما (id) تبدأ من 1 في كل منهما، فمن الممكن جداً أن يتطابق
-    رقمياً معرف المشرف مع معرف أحد الطلاب. بدون تخزين نوع المستقبل
-    (receiver_type) لا يمكن التفريق لاحقاً بين رسالة موجهة للمشرف
-    ورسالة موجهة لطالب آخر يحمل نفس الرقم، مما قد يخلط المحادثات."""
-    try:
-        return execute_query(
-            """INSERT INTO messages (sender_id, sender_type, receiver_id, receiver_type, message, file_url) 
-               VALUES (?, ?, ?, ?, ?, ?)""",
-            (sender_id, sender_type, receiver_id, receiver_type, message, file_url)
-        )
-    except Exception as e:
-        if 'file_url' in str(e) or 'receiver_type' in str(e):
-            return execute_query(
-                """INSERT INTO messages (sender_id, sender_type, receiver_id, message) 
-                   VALUES (?, ?, ?, ?)""",
-                (sender_id, sender_type, receiver_id, message)
-            )
-        raise
-def send_group_message(sender_id, sender_type, group_id, message, file_url=None):
-    """إرسال رسالة لمجموعة.
-    ملاحظة مهمة: نُنشئ صفاً واحداً لكل عضو في المجموعة، بما في ذلك المرسل
-    نفسه إن كان عضواً فيها (طالباً يبعث لمجموعته). عرض محادثة المجموعة
-    يعتمد فقط على group_id بدون أي تصفية حسب receiver_id، فتخطي صف
-    المرسل - كما كان يحدث سابقاً - كان يجعل الرسالة تختفي بالكامل من
-    المحادثة إذا كان المرسل هو العضو الوحيد في المجموعة (أو حتى لو كان
-    هناك أعضاء آخرون، ظهورها كان يعتمد بالصدفة على وجودهم لا على صف
-    خاص بالمرسل). صف المرسل نفسه يُنشأ مقروءاً مسبقاً (is_read=1) حتى لا
-    يُحتسب ضمن عداد رسائله الخاصة غير المقروءة."""
-    members = query_all(
-        "SELECT student_id FROM group_members WHERE group_id = ?",
-        (group_id,)
+    """إرسال رسالة فردية بين مستخدمين (طالب/مشرف)."""
+    return execute_query(
+        """INSERT INTO messages (sender_id, sender_type, receiver_id, receiver_type, message, file_url)
+           VALUES (?, ?, ?, ?, ?, ?)""",
+        (sender_id, sender_type, receiver_id, receiver_type, message, file_url)
     )
 
+def send_group_message(sender_id, sender_type, group_id, message, file_url=None):
+    """إرسال رسالة لمجموعة.
+    ننشئ صفاً واحداً لكل عضو في المجموعة، بما في ذلك المرسل نفسه إن كان
+    عضواً فيها (طالب يبعث لمجموعته)، لأن عرض محادثة المجموعة يعتمد فقط
+    على group_id بدون تصفية حسب receiver_id. صف المرسل نفسه يُنشأ
+    مقروءاً مسبقاً (is_read=1) حتى لا يُحتسب ضمن عداد رسائله الخاصة."""
+    members = query_all("SELECT student_id FROM group_members WHERE group_id = ?", (group_id,))
     for member in members:
         is_sender_own_copy = (member['student_id'] == sender_id and sender_type == 'student')
         execute_query(
-            """INSERT INTO messages (sender_id, sender_type, receiver_id, receiver_type, message, file_url, is_group, group_id, is_read) 
+            """INSERT INTO messages (sender_id, sender_type, receiver_id, receiver_type, message, file_url, is_group, group_id, is_read)
                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (sender_id, sender_type, member['student_id'], 'student', message, file_url, 1, group_id,
              1 if is_sender_own_copy else 0)
         )
     return True
+
 def get_unread_count(user_id, user_type=None):
-    """الحصول على عدد الرسائل غير المقروءة.
-    user_type اختياري لكنه مهم جداً: بما أن جدولي admins و students منفصلان
-    وقد تتطابق معرفاتهما رقمياً، تمرير user_type يمنع احتساب رسائل موجهة
-    لشخص آخر (يحمل نفس المعرف في الجدول الآخر) ضمن عداد هذا المستخدم."""
+    """عدد الرسائل غير المقروءة لمستخدم. user_type اختياري لكنه مهم لمنع
+    احتساب رسائل موجهة لشخص آخر يحمل نفس المعرف في الجدول الآخر."""
     if user_type:
         result = query_one(
             "SELECT COUNT(*) as count FROM messages WHERE receiver_id = ? AND receiver_type = ? AND is_read = 0",
@@ -1106,8 +1089,9 @@ def get_unread_count(user_id, user_type=None):
             (user_id,)
         )
     return result['count'] if result else 0
+
 def get_all_notifications(user_id, user_type, limit=200):
-    """الحصول على جميع إشعارات المستخدم (المقروءة وغير المقروءة) لصفحة الإشعارات الكاملة"""
+    """جميع إشعارات المستخدم (المقروءة وغير المقروءة) لصفحة الإشعارات الكاملة"""
     rows = query_all(
         """SELECT m.id, m.message, m.created_at, m.sender_id, m.sender_type, m.is_read,
                   COALESCE(s.name, a.name, 'مستخدم') as sender_name
@@ -1120,8 +1104,9 @@ def get_all_notifications(user_id, user_type, limit=200):
         (user_id, user_type, limit)
     )
     return [dict(r) for r in rows]
+
 def get_recent_notifications(user_id, user_type, limit=8):
-    """الحصول على آخر الإشعارات (الرسائل غير المقروءة) لعرضها في قائمة الجرس"""
+    """آخر الإشعارات (الرسائل غير المقروءة) لعرضها في قائمة الجرس"""
     rows = query_all(
         """SELECT m.id, m.message, m.created_at, m.sender_id, m.sender_type,
                   COALESCE(s.name, a.name, 'مستخدم') as sender_name
@@ -1134,14 +1119,13 @@ def get_recent_notifications(user_id, user_type, limit=8):
         (user_id, user_type, limit)
     )
     return [dict(r) for r in rows]
+
 def mark_message_as_read(message_id):
     """تحديد رسالة كمقروءة"""
-    execute_query(
-        "UPDATE messages SET is_read = 1 WHERE id = ?",
-        (message_id,)
-    )
+    execute_query("UPDATE messages SET is_read = 1 WHERE id = ?", (message_id,))
+
 def mark_all_messages_read(user_id, user_type=None):
-    """تحديد جميع الرسائل كمقروءة"""
+    """تحديد جميع رسائل مستخدم كمقروءة"""
     if user_type:
         execute_query(
             "UPDATE messages SET is_read = 1 WHERE receiver_id = ? AND receiver_type = ? AND is_read = 0",
@@ -1152,17 +1136,15 @@ def mark_all_messages_read(user_id, user_type=None):
             "UPDATE messages SET is_read = 1 WHERE receiver_id = ? AND is_read = 0",
             (user_id,)
         )
+
 def get_user_messages(user_id, other_user_id, limit=50, user_type=None, other_user_type=None):
-    """الحصول على رسائل بين مستخدمين.
-    تمرير user_type/other_user_type يمنع خلط المحادثة مع محادثة أخرى في حال
-    تطابق معرف طالب رقمياً مع معرف المشرف (لأنهما من جدولين مستقلين).
-    (is_group = 0 OR is_group IS NULL) ضروري لاستبعاد رسائل المجموعات،
-    التي تُخزَّن بنفس (sender_id, receiver_id) الخاصين بمحادثة فردية بين
-    المرسل وأحد أعضاء المجموعة، فتظهر خطأً ضمن المحادثة الفردية بينهما
-    إن لم تُستبعد صراحةً."""
+    """رسائل محادثة فردية بين مستخدمين (أحدث أولاً).
+    (is_group = 0 OR is_group IS NULL) ضروري لاستبعاد رسائل المجموعات التي
+    قد تُخزَّن بنفس (sender_id, receiver_id) الخاصين بمحادثة فردية بين
+    المرسل وأحد أعضاء المجموعة."""
     if user_type and other_user_type:
         return query_all("""
-            SELECT * FROM messages 
+            SELECT * FROM messages
             WHERE ((sender_id = ? AND sender_type = ? AND receiver_id = ? AND receiver_type = ?)
                 OR (sender_id = ? AND sender_type = ? AND receiver_id = ? AND receiver_type = ?))
               AND (is_group = 0 OR is_group IS NULL)
@@ -1170,30 +1152,60 @@ def get_user_messages(user_id, other_user_id, limit=50, user_type=None, other_us
         """, (other_user_id, other_user_type, user_id, user_type,
               user_id, user_type, other_user_id, other_user_type, limit))
     return query_all("""
-        SELECT * FROM messages 
+        SELECT * FROM messages
         WHERE ((sender_id = ? AND receiver_id = ?) OR (sender_id = ? AND receiver_id = ?))
           AND (is_group = 0 OR is_group IS NULL)
         ORDER BY created_at DESC LIMIT ?
     """, (user_id, other_user_id, other_user_id, user_id, limit))
+
+def mark_conversation_read(reader_id, reader_type, other_id, other_type):
+    """تحديد كل رسائل الطرف الآخر في محادثة فردية كمقروءة بالنسبة للقارئ."""
+    execute_query("""
+        UPDATE messages SET is_read = 1
+        WHERE sender_id = ? AND sender_type = ? AND receiver_id = ? AND receiver_type = ? AND is_read = 0
+          AND (is_group = 0 OR is_group IS NULL)
+    """, (other_id, other_type, reader_id, reader_type))
+
+def mark_group_read_for_user(group_id, user_id):
+    """تحديد رسائل مجموعة كمقروءة بالنسبة لعضو معيّن."""
+    execute_query(
+        "UPDATE messages SET is_read = 1 WHERE group_id = ? AND receiver_id = ? AND is_read = 0",
+        (group_id, user_id)
+    )
+
+def clear_conversation(user_id, user_type, other_id, other_type):
+    """مسح كل رسائل محادثة فردية بين طرفين."""
+    execute_query("""
+        DELETE FROM messages
+        WHERE ((sender_id = ? AND sender_type = ? AND receiver_id = ? AND receiver_type = ?)
+           OR (sender_id = ? AND sender_type = ? AND receiver_id = ? AND receiver_type = ?))
+          AND (is_group = 0 OR is_group IS NULL)
+    """, (user_id, user_type, other_id, other_type, other_id, other_type, user_id, user_type))
+
+def clear_group_messages(group_id):
+    """مسح كل رسائل مجموعة."""
+    execute_query("DELETE FROM messages WHERE group_id = ?", (group_id,))
+
 def get_user_contacts(user_id, exclude_id=None, user_type='student'):
-    """الحصول على قائمة جهات الاتصال - جميع الطلاب النشطين."""
+    """قائمة جهات الاتصال: جميع الطلاب النشطين، مع آخر رسالة وعدد غير المقروء
+    بالنسبة لـ (user_id, user_type)."""
     inner = """
-        SELECT 
+        SELECT
             s.id as contact_id,
             s.name,
             s.email,
             s.status,
-            (SELECT message FROM messages 
+            (SELECT message FROM messages
              WHERE ((sender_id = s.id AND sender_type = 'student' AND receiver_id = %s AND receiver_type = %s)
                  OR (sender_id = %s AND sender_type = %s AND receiver_id = s.id AND receiver_type = 'student'))
                AND (is_group = 0 OR is_group IS NULL)
              ORDER BY created_at DESC LIMIT 1) as last_message,
-            (SELECT created_at FROM messages 
+            (SELECT created_at FROM messages
              WHERE ((sender_id = s.id AND sender_type = 'student' AND receiver_id = %s AND receiver_type = %s)
                  OR (sender_id = %s AND sender_type = %s AND receiver_id = s.id AND receiver_type = 'student'))
                AND (is_group = 0 OR is_group IS NULL)
              ORDER BY created_at DESC LIMIT 1) as last_time,
-            COALESCE((SELECT COUNT(*) FROM messages 
+            COALESCE((SELECT COUNT(*) FROM messages
              WHERE sender_id = s.id AND sender_type = 'student' AND receiver_id = %s AND receiver_type = %s AND is_read = 0
                AND (is_group = 0 OR is_group IS NULL)), 0) as unread
         FROM students s
@@ -1205,10 +1217,180 @@ def get_user_contacts(user_id, exclude_id=None, user_type='student'):
     if exclude_id is not None:
         inner += " AND s.id != %s"
         params.append(exclude_id)
-    
-    # ✅ الحل: تغليف الاستعلام ليصبح last_time متاحاً في ORDER BY
+    # تغليف الاستعلام ليصبح last_time متاحاً في ORDER BY
     sql = "SELECT * FROM (" + inner + ") AS contacts ORDER BY COALESCE(last_time, '1970-01-01') DESC, name ASC"
     return query_all(sql, tuple(params))
+
+def get_admin_contact_for_student(student_id):
+    """جهة اتصال المشرف الثابتة لدى كل طالب. المشرف موجود في جدول admins
+    المنفصل عن students، لذلك لا يمكن أن يظهر ضمن get_user_contacts."""
+    admin_user = query_one("SELECT * FROM admins ORDER BY id LIMIT 1")
+    if not admin_user:
+        return None
+    last = query_one("""
+        SELECT message, created_at FROM messages
+        WHERE ((sender_id = ? AND sender_type = 'admin' AND receiver_id = ? AND receiver_type = 'student')
+            OR (sender_id = ? AND sender_type = 'student' AND receiver_id = ? AND receiver_type = 'admin'))
+          AND (is_group = 0 OR is_group IS NULL)
+        ORDER BY created_at DESC LIMIT 1
+    """, (admin_user['id'], student_id, student_id, admin_user['id']))
+    unread = query_one("""
+        SELECT COUNT(*) as count FROM messages
+        WHERE sender_id = ? AND sender_type = 'admin' AND receiver_id = ? AND receiver_type = 'student' AND is_read = 0
+          AND (is_group = 0 OR is_group IS NULL)
+    """, (admin_user['id'], student_id))
+    return {
+        'contact_id': admin_user['id'],
+        'name': admin_user['name'],
+        'last_message': last['message'] if last else None,
+        'last_time': last['created_at'] if last else None,
+        'unread': unread['count'] if unread else 0,
+    }
+
+def get_groups_for_user(user_id, user_type):
+    """قائمة المجموعات المرئية لمستخدم مع آخر رسالة وعدد غير المقروء.
+    المشرف يرى كل المجموعات، أما الطالب فيرى فقط مجموعاته."""
+    if user_type == 'admin':
+        rows = query_all("SELECT * FROM message_groups ORDER BY name")
+    else:
+        rows = query_all("""
+            SELECT mg.* FROM message_groups mg
+            JOIN group_members gm ON gm.group_id = mg.id
+            WHERE gm.student_id = ?
+            ORDER BY mg.name
+        """, (user_id,))
+    groups = [dict(g) for g in rows]
+    for g in groups:
+        unread = query_one(
+            "SELECT COUNT(*) as count FROM messages WHERE group_id = ? AND receiver_id = ? AND is_read = 0",
+            (g['id'], user_id)
+        )
+        g['unread'] = unread['count'] if unread else 0
+        last = query_one(
+            "SELECT message, created_at FROM messages WHERE group_id = ? ORDER BY created_at DESC LIMIT 1",
+            (g['id'],)
+        )
+        g['last_message'] = last['message'] if last else None
+        g['last_time'] = last['created_at'] if last else None
+    return groups
+
+def get_group_with_members(group_id, require_member_id=None):
+    """مجموعة رسائل مع أعضائها. إن مُرر require_member_id يتحقق أن هذا
+    الطالب عضو فيها (تستخدمها صفحة الطالب لمنع فتح مجموعة لا ينتمي لها)."""
+    if require_member_id is not None:
+        group = query_one(
+            "SELECT * FROM message_groups WHERE id = ? AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ? AND student_id = ?)",
+            (group_id, group_id, require_member_id)
+        )
+    else:
+        group = query_one("SELECT * FROM message_groups WHERE id = ?", (group_id,))
+    if not group:
+        return None
+    group = dict(group)
+    group['members'] = query_all(
+        "SELECT s.* FROM group_members gm JOIN students s ON s.id = gm.student_id WHERE gm.group_id = ?",
+        (group_id,)
+    )
+    return group
+
+def build_conversations_list(groups, contacts, admin_contact=None):
+    """دمج (المشرف + المجموعات + المحادثات الفردية) في قائمة واحدة، مرتّبة
+    حسب آخر نشاط (الأحدث أولاً)، بأسلوب مشابه لتطبيقات المحادثة المعروفة."""
+    conversations = []
+    if admin_contact:
+        conversations.append({
+            'type': 'admin', 'id': admin_contact['contact_id'], 'name': admin_contact['name'],
+            'last_message': admin_contact['last_message'], 'last_time': admin_contact['last_time'],
+            'unread': admin_contact['unread']
+        })
+    for g in groups:
+        conversations.append({
+            'type': 'group', 'id': g['id'], 'name': g['name'], 'color': g.get('color'),
+            'last_message': g['last_message'], 'last_time': g['last_time'], 'unread': g['unread']
+        })
+    for c in contacts:
+        conversations.append({
+            'type': 'user', 'id': c['contact_id'], 'name': c['name'],
+            'last_message': c['last_message'], 'last_time': c['last_time'], 'unread': c['unread'],
+            'is_online': c.get('is_online', False)
+        })
+    with_time = sorted([c for c in conversations if c['last_time']], key=lambda x: str(x['last_time']), reverse=True)
+    without_time = sorted([c for c in conversations if not c['last_time']], key=lambda x: x['name'] or '')
+    return with_time + without_time
+
+def get_group_messages(group_id, order='DESC'):
+    """رسائل مجموعة بترتيب زمني معيّن (DESC للعرض الحديث أولاً، ASC للعرض
+    التسلسلي كما في صفحة الطالب)."""
+    order = 'ASC' if order == 'ASC' else 'DESC'
+    return query_all(f"SELECT * FROM messages WHERE group_id = ? ORDER BY created_at {order}", (group_id,))
+
+def send_message_common(sender_id, sender_type, force_receiver_type=None):
+    """معالجة مشتركة لإرسال رسالة نصية (فردية أو جماعية) من مسارات /send
+    الخاصة بالمشرف والطالب معاً، لتفادي تكرار نفس المنطق مرتين."""
+    receiver_id = request.form.get('receiver_id')
+    receiver_type = force_receiver_type or request.form.get('receiver_type', 'student')
+    group_id = request.form.get('group_id')
+    message = request.form.get('message')
+
+    if not message:
+        return jsonify({'success': False, 'message': 'الرسالة فارغة'})
+
+    if group_id:
+        send_group_message(sender_id, sender_type, group_id, message)
+        return jsonify({'success': True, 'message': 'تم إرسال الرسالة للمجموعة'})
+    if receiver_id:
+        send_message(sender_id, sender_type, receiver_id, receiver_type, message)
+        return jsonify({'success': True, 'message': 'تم إرسال الرسالة'})
+
+    return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
+
+def send_attachment_common(sender_id, sender_type, file, force_receiver_type=None,
+                            missing_file_message='لم يتم اختيار ملف'):
+    """معالجة مشتركة لإرسال ملف مرفق (فردي أو جماعي)."""
+    receiver_id = request.form.get('receiver_id')
+    receiver_type = force_receiver_type or request.form.get('receiver_type', 'student')
+    group_id = request.form.get('group_id')
+
+    if not file:
+        return jsonify({'success': False, 'message': missing_file_message})
+
+    file_url = save_uploaded_file(file, 'files')
+    if not file_url:
+        return jsonify({'success': False, 'message': 'خطأ في رفع الملف'})
+
+    label = f"📎 ملف مرفق: {file.filename}"
+    message_id = None
+    if group_id:
+        send_group_message(sender_id, sender_type, group_id, label, file_url)
+    elif receiver_id:
+        message_id = send_message(sender_id, sender_type, receiver_id, receiver_type, label, file_url)
+    else:
+        return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
+
+    return jsonify({'success': True, 'message': 'تم إرسال الملف', 'message_id': message_id, 'file_url': file_url})
+
+def send_voice_common(sender_id, sender_type, force_receiver_type=None):
+    """معالجة مشتركة لإرسال رسالة صوتية (فردية أو جماعية)."""
+    receiver_id = request.form.get('receiver_id')
+    receiver_type = force_receiver_type or request.form.get('receiver_type', 'student')
+    group_id = request.form.get('group_id')
+    file = request.files.get('audio')
+
+    if not file:
+        return jsonify({'success': False, 'message': 'لم يتم استلام تسجيل صوتي'})
+
+    file_url = save_uploaded_file(file, 'files')
+    if not file_url:
+        return jsonify({'success': False, 'message': 'خطأ في رفع التسجيل الصوتي'})
+
+    if group_id:
+        send_group_message(sender_id, sender_type, group_id, "🎤 رسالة صوتية", file_url)
+    elif receiver_id:
+        send_message(sender_id, sender_type, receiver_id, receiver_type, "🎤 رسالة صوتية", file_url)
+    else:
+        return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
+
+    return jsonify({'success': True, 'file_url': file_url})
 # ============================================================ #
 # ====== SECTION 7: STUDENT HELPERS =========================== #
 # ============================================================ #
@@ -26755,52 +26937,21 @@ def get_competition_grades_json(comp_id):
 def admin_messages():
     """صفحة رسائل المشرف"""
     admin = get_current_user()
-    groups = query_all("SELECT * FROM message_groups ORDER BY name")
-    groups = [dict(g) for g in groups]
-    for g in groups:
-        g_unread = query_one(
-            "SELECT COUNT(*) as count FROM messages WHERE group_id = ? AND receiver_id = ? AND is_read = 0",
-            (g['id'], admin['id'])
-        )
-        g['unread'] = g_unread['count'] if g_unread else 0
-        g_last = query_one(
-            "SELECT message, created_at FROM messages WHERE group_id = ? ORDER BY created_at DESC LIMIT 1",
-            (g['id'],)
-        )
-        g['last_message'] = g_last['message'] if g_last else None
-        g['last_time'] = g_last['created_at'] if g_last else None
+    groups = get_groups_for_user(admin['id'], 'admin')
     contacts = get_user_contacts(admin['id'], user_type='admin')
     unread_count = get_unread_count(admin['id'], 'admin')
+    conversations = build_conversations_list(groups, contacts)
 
-    # ===== قائمة موحّدة (مجموعات + محادثات فردية) مرتّبة حسب آخر نشاط، مثل Messenger =====
-    conversations = []
-    for g in groups:
-        conversations.append({
-            'type': 'group', 'id': g['id'], 'name': g['name'], 'color': g.get('color'),
-            'last_message': g['last_message'], 'last_time': g['last_time'], 'unread': g['unread']
-        })
-    for c in contacts:
-        conversations.append({
-            'type': 'user', 'id': c['contact_id'], 'name': c['name'],
-            'last_message': c['last_message'], 'last_time': c['last_time'], 'unread': c['unread'],
-            'is_online': c.get('is_online', False)
-        })
-    with_time = [c for c in conversations if c['last_time']]
-    without_time = [c for c in conversations if not c['last_time']]
-    with_time.sort(key=lambda x: str(x['last_time']), reverse=True)
-    without_time.sort(key=lambda x: x['name'] or '')
-    conversations = with_time + without_time
-    
     selected_contact_id = request.args.get('contact', type=int)
     selected_group_id = request.args.get('group', type=int)
-    
+
     messages = []
     selected_contact = None
     selected_group = None
     is_group = False
     chat_id = None
     chat_type = None
-    
+
     if selected_contact_id:
         selected_contact = get_student_by_id(selected_contact_id)
         if selected_contact:
@@ -26809,21 +26960,13 @@ def admin_messages():
             chat_id = selected_contact_id
             chat_type = 'user'
     elif selected_group_id:
-        selected_group = query_one("SELECT * FROM message_groups WHERE id = ?", (selected_group_id,))
+        selected_group = get_group_with_members(selected_group_id)
         if selected_group:
-            selected_group = dict(selected_group)
-            selected_group['members'] = query_all(
-                "SELECT s.* FROM group_members gm JOIN students s ON s.id = gm.student_id WHERE gm.group_id = ?",
-                (selected_group_id,)
-            )
-            messages = query_all(
-                "SELECT * FROM messages WHERE group_id = ? ORDER BY created_at DESC",
-                (selected_group_id,)
-            )
+            messages = get_group_messages(selected_group_id, order='DESC')
             is_group = True
             chat_id = selected_group_id
             chat_type = 'group'
-    
+
     return render_template_string(MESSAGES_HTML,
                                    contacts=contacts,
                                    groups=groups,
@@ -26844,44 +26987,13 @@ def admin_messages():
 def send_admin_message():
     """إرسال رسالة من المشرف"""
     admin = get_current_user()
-    receiver_id = request.form.get('receiver_id')
-    message = request.form.get('message')
-    group_id = request.form.get('group_id')
-    
-    if not message:
-        return jsonify({'success': False, 'message': 'الرسالة فارغة'})
-    
-    if group_id:
-        # إرسال رسالة مجموعة
-        send_group_message(admin['id'], 'admin', group_id, message)
-        return jsonify({'success': True, 'message': 'تم إرسال الرسالة للمجموعة'})
-    elif receiver_id:
-        send_message(admin['id'], 'admin', receiver_id, 'student', message)
-        return jsonify({'success': True, 'message': 'تم إرسال الرسالة'})
-    
-    return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
+    return send_message_common(admin['id'], 'admin', force_receiver_type='student')
 @app.route('/admin/messages/send_file', methods=['POST'])
 @login_required('admin', assistant_permission='send_messages')
 def send_admin_file():
     """إرسال ملف من المشرف"""
     admin = get_current_user()
-    receiver_id = request.form.get('receiver_id')
-    group_id = request.form.get('group_id')
-    file = request.files.get('file')
-    
-    if not file:
-        return jsonify({'success': False, 'message': 'لم يتم اختيار ملف'})
-    
-    file_url = save_uploaded_file(file, 'files')
-    if not file_url:
-        return jsonify({'success': False, 'message': 'خطأ في رفع الملف'})
-    
-    if group_id:
-        send_group_message(admin['id'], 'admin', group_id, f"📎 ملف مرفق: {file.filename}", file_url)
-    elif receiver_id:
-        send_message(admin['id'], 'admin', receiver_id, 'student', f"📎 ملف مرفق: {file.filename}", file_url)
-    
-    return jsonify({'success': True, 'file_url': file_url})
+    return send_attachment_common(admin['id'], 'admin', request.files.get('file'), force_receiver_type='student')
 @app.route('/admin/messages/create_group', methods=['POST'])
 @login_required('admin', assistant_permission='send_messages')
 def create_message_group():
@@ -26953,29 +27065,12 @@ def remove_group_member():
 def send_admin_voice():
     """إرسال رسالة صوتية من المشرف"""
     admin = get_current_user()
-    receiver_id = request.form.get('receiver_id')
-    group_id = request.form.get('group_id')
-    file = request.files.get('audio')
-
-    if not file:
-        return jsonify({'success': False, 'message': 'لم يتم استلام تسجيل صوتي'})
-
-    file_url = save_uploaded_file(file, 'files')
-    if not file_url:
-        return jsonify({'success': False, 'message': 'خطأ في رفع التسجيل الصوتي'})
-
-    if group_id:
-        send_group_message(admin['id'], 'admin', group_id, "🎤 رسالة صوتية", file_url)
-    elif receiver_id:
-        send_message(admin['id'], 'admin', receiver_id, 'student', "🎤 رسالة صوتية", file_url)
-    else:
-        return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
-
-    return jsonify({'success': True, 'file_url': file_url})
+    return send_voice_common(admin['id'], 'admin', force_receiver_type='student')
 @app.route('/admin/messages/check_new/<type>/<int:id>')
 @login_required('admin')
 def check_new_admin_messages(type, id):
-    """التحقق من الرسائل الجديدة للمشرف"""
+    """التحقق من الرسائل الجديدة للمشرف (لا تُحدَّد كمقروءة هنا، ذلك مسؤول
+    عنه مسار mark_read/mark_all_read المستدعى من الواجهة عند فتح المحادثة)"""
     admin_id = session['user_id']
     
     if type == 'user':
@@ -27023,17 +27118,9 @@ def clear_admin_chat():
     type = data.get('type')
     
     if type == 'user':
-        execute_query("""
-            DELETE FROM messages 
-            WHERE ((sender_id = ? AND sender_type = 'admin' AND receiver_id = ? AND receiver_type = 'student')
-               OR (sender_id = ? AND sender_type = 'student' AND receiver_id = ? AND receiver_type = 'admin'))
-              AND (is_group = 0 OR is_group IS NULL)
-        """, (session['user_id'], id, id, session['user_id']))
+        clear_conversation(session['user_id'], 'admin', id, 'student')
     elif type == 'group':
-        execute_query(
-            "DELETE FROM messages WHERE group_id = ?",
-            (id,)
-        )
+        clear_group_messages(id)
     
     return jsonify({'success': True})
 
@@ -28179,51 +28266,8 @@ def student_messages():
     student = get_current_user()
     # نستبعد الطالب نفسه من قائمته الخاصة فقط (وليس عند المشرف)
     contacts = get_user_contacts(student['id'], exclude_id=student['id'], user_type='student')
-
-    # ===== جهة اتصال المشرف (ثابتة دائماً) =====
-    # المشرف موجود في جدول admins المنفصل عن جدول students، لذلك
-    # get_user_contacts (الذي يجلب فقط من جدول students) لا يمكن أن
-    # يتضمنه أبداً. كان هذا هو السبب الحقيقي لعدم وصول/ظهور الرسائل
-    # الفردية من المشرف للطالب رغم وصول رسائل المجموعات: الطالب لم يكن
-    # يملك أي عنصر في الواجهة لفتح محادثته مع المشرف من الأساس، حتى لو
-    # كانت الرسالة مخزّنة بنجاح في قاعدة البيانات.
-    admin_user = query_one("SELECT * FROM admins ORDER BY id LIMIT 1")
-    admin_contact = None
-    if admin_user:
-        admin_last = query_one("""
-            SELECT message, created_at FROM messages
-            WHERE ((sender_id = ? AND sender_type = 'admin' AND receiver_id = ? AND receiver_type = 'student')
-                OR (sender_id = ? AND sender_type = 'student' AND receiver_id = ? AND receiver_type = 'admin'))
-              AND (is_group = 0 OR is_group IS NULL)
-            ORDER BY created_at DESC LIMIT 1
-        """, (admin_user['id'], student['id'], student['id'], admin_user['id']))
-        admin_unread = query_one("""
-            SELECT COUNT(*) as count FROM messages
-            WHERE sender_id = ? AND sender_type = 'admin' AND receiver_id = ? AND receiver_type = 'student' AND is_read = 0
-              AND (is_group = 0 OR is_group IS NULL)
-        """, (admin_user['id'], student['id']))
-        admin_contact = {
-            'contact_id': admin_user['id'],
-            'name': admin_user['name'],
-            'last_message': admin_last['message'] if admin_last else None,
-            'last_time': admin_last['created_at'] if admin_last else None,
-            'unread': admin_unread['count'] if admin_unread else 0,
-        }
-
-    # مجموعات الطالب: فقط المجموعات التي هو عضو فيها
-    groups = query_all("""
-        SELECT mg.* FROM message_groups mg
-        JOIN group_members gm ON gm.group_id = mg.id
-        WHERE gm.student_id = ?
-        ORDER BY mg.name
-    """, (student['id'],))
-    groups = [dict(g) for g in groups]
-    for g in groups:
-        g_unread = query_one(
-            "SELECT COUNT(*) as count FROM messages WHERE group_id = ? AND receiver_id = ? AND is_read = 0",
-            (g['id'], student['id'])
-        )
-        g['unread'] = g_unread['count'] if g_unread else 0
+    admin_contact = get_admin_contact_for_student(student['id'])
+    groups = get_groups_for_user(student['id'], 'student')
 
     selected_contact_id = request.args.get('contact', type=int)
     selected_contact_type = request.args.get('type', 'student')
@@ -28244,10 +28288,7 @@ def student_messages():
             selected_contact = dict(selected_contact)
             messages = get_user_messages(student['id'], selected_contact_id,
                                           user_type='student', other_user_type='admin')
-            # تحديد رسائل المشرف كمقروءة بالنسبة لهذا الطالب
-            for msg in messages:
-                if msg['sender_type'] == 'admin' and not msg['is_read']:
-                    mark_message_as_read(msg['id'])
+            mark_conversation_read(student['id'], 'student', selected_contact_id, 'admin')
             chat_id = selected_contact_id
             chat_type = 'admin'
     elif selected_contact_id:
@@ -28255,23 +28296,12 @@ def student_messages():
         if selected_contact:
             messages = get_user_messages(student['id'], selected_contact_id,
                                           user_type='student', other_user_type='student')
-            # تحديد رسائل الطالب كمقروءة
-            for msg in messages:
-                if msg['sender_id'] == selected_contact_id and msg['sender_type'] == 'student' and not msg['is_read']:
-                    mark_message_as_read(msg['id'])
+            mark_conversation_read(student['id'], 'student', selected_contact_id, 'student')
             chat_id = selected_contact_id
             chat_type = 'user'
     elif selected_group_id:
-        selected_group = query_one(
-            "SELECT * FROM message_groups WHERE id = ? AND EXISTS (SELECT 1 FROM group_members WHERE group_id = ? AND student_id = ?)",
-            (selected_group_id, selected_group_id, student['id'])
-        )
+        selected_group = get_group_with_members(selected_group_id, require_member_id=student['id'])
         if selected_group:
-            selected_group = dict(selected_group)
-            selected_group['members'] = query_all(
-                "SELECT s.* FROM group_members gm JOIN students s ON s.id = gm.student_id WHERE gm.group_id = ?",
-                (selected_group_id,)
-            )
             messages = query_all("""
                 SELECT m.*, 
                        CASE WHEN m.sender_type = 'student' THEN s.name ELSE a.name END as sender_name
@@ -28280,48 +28310,13 @@ def student_messages():
                 LEFT JOIN admins a ON a.id = m.sender_id AND m.sender_type = 'admin'
                 WHERE m.group_id = ? ORDER BY m.created_at ASC
             """, (selected_group_id,))
-            # تحديد رسائل المجموعة كمقروءة بالنسبة لهذا الطالب
-            execute_query(
-                "UPDATE messages SET is_read = 1 WHERE group_id = ? AND receiver_id = ? AND is_read = 0",
-                (selected_group_id, student['id'])
-            )
+            mark_group_read_for_user(selected_group_id, student['id'])
             is_group = True
             chat_id = selected_group_id
             chat_type = 'group'
 
-    # تحديث عدد الرسائل غير المقروءة
     unread_count = get_unread_count(student['id'], 'student')
-
-    # ===== قائمة موحّدة (المشرف + المجموعات + المحادثات الفردية) مرتّبة حسب آخر نشاط، مثل Messenger =====
-    conversations = []
-    if admin_contact:
-        conversations.append({
-            'type': 'admin', 'id': admin_contact['contact_id'], 'name': admin_contact['name'],
-            'last_message': admin_contact['last_message'], 'last_time': admin_contact['last_time'],
-            'unread': admin_contact['unread']
-        })
-    for g in groups:
-        g_last = query_one(
-            "SELECT message, created_at FROM messages WHERE group_id = ? ORDER BY created_at DESC LIMIT 1",
-            (g['id'],)
-        )
-        conversations.append({
-            'type': 'group', 'id': g['id'], 'name': g['name'], 'color': g.get('color'),
-            'last_message': g_last['message'] if g_last else None,
-            'last_time': g_last['created_at'] if g_last else None,
-            'unread': g['unread']
-        })
-    for c in contacts:
-        conversations.append({
-            'type': 'user', 'id': c['contact_id'], 'name': c['name'],
-            'last_message': c['last_message'], 'last_time': c['last_time'], 'unread': c['unread'],
-            'is_online': c.get('is_online', False)
-        })
-    with_time = [c for c in conversations if c['last_time']]
-    without_time = [c for c in conversations if not c['last_time']]
-    with_time.sort(key=lambda x: str(x['last_time']), reverse=True)
-    without_time.sort(key=lambda x: x['name'] or '')
-    conversations = with_time + without_time
+    conversations = build_conversations_list(groups, contacts, admin_contact)
 
     return render_template_string(STUDENT_MESSAGES_HTML,
                                    student=student,
@@ -28346,62 +28341,24 @@ def student_messages():
 def send_student_message():
     """إرسال رسالة من الطالب"""
     student = get_current_user()
-    receiver_id = request.form.get('receiver_id')
-    receiver_type = request.form.get('receiver_type', 'student')
-    group_id = request.form.get('group_id')
-    message = request.form.get('message')
-    
-    if not message:
-        return jsonify({'success': False, 'message': 'الرسالة فارغة'})
-
-    if group_id:
-        send_group_message(student['id'], 'student', group_id, message)
-        return jsonify({'success': True, 'message': 'تم إرسال الرسالة للمجموعة'})
-    elif receiver_id:
-        send_message(student['id'], 'student', receiver_id, receiver_type, message)
-        return jsonify({'success': True, 'message': 'تم إرسال الرسالة'})
-
-    return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
+    return send_message_common(student['id'], 'student')
 @app.route('/student/messages/send_file', methods=['POST'])
 @login_required('student')
 def send_student_file():
     """إرسال ملف من الطالب"""
     student = get_current_user()
-    receiver_id = request.form.get('receiver_id')
-    receiver_type = request.form.get('receiver_type', 'student')
-    file = request.files.get('file')
-    
-    if not file or not receiver_id:
-        return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
-    
-    file_url = save_uploaded_file(file, 'files')
-    if not file_url:
-        return jsonify({'success': False, 'message': 'خطأ في رفع الملف'})
-    
-    message_id = send_message(student['id'], 'student', receiver_id, receiver_type, f"📎 ملف مرفق: {file.filename}", file_url)
-    return jsonify({'success': True, 'message': 'تم إرسال الملف', 'message_id': message_id, 'file_url': file_url})
+    return send_attachment_common(student['id'], 'student', request.files.get('file'),
+                                   missing_file_message='بيانات غير صالحة')
 @app.route('/student/messages/send_voice', methods=['POST'])
 @login_required('student')
 def send_student_voice():
     """إرسال رسالة صوتية من الطالب"""
     student = get_current_user()
-    receiver_id = request.form.get('receiver_id')
-    receiver_type = request.form.get('receiver_type', 'student')
-    file = request.files.get('audio')
-
-    if not file or not receiver_id:
-        return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
-
-    file_url = save_uploaded_file(file, 'files')
-    if not file_url:
-        return jsonify({'success': False, 'message': 'خطأ في رفع التسجيل الصوتي'})
-
-    send_message(student['id'], 'student', receiver_id, receiver_type, "🎤 رسالة صوتية", file_url)
-    return jsonify({'success': True, 'message': 'تم إرسال الرسالة الصوتية'})
+    return send_voice_common(student['id'], 'student')
 @app.route('/student/messages/check_new/<int:contact_id>')
 @login_required('student')
 def check_new_student_messages(contact_id):
-    """التحقق من الرسائل الجديدة للطالب"""
+    """التحقق من الرسائل الجديدة للطالب، وتحديدها كمقروءة فور جلبها"""
     student_id = session['user_id']
     contact_type = request.args.get('type', 'student')
     if contact_type not in ('student', 'admin'):
@@ -28416,7 +28373,6 @@ def check_new_student_messages(contact_id):
         ORDER BY created_at DESC
     """, (contact_id, contact_type, student_id, student_id, contact_id, contact_type, student_id))
     
-    # تحديد الرسائل كمقروءة
     for msg in messages:
         mark_message_as_read(msg['id'])
     
@@ -28446,16 +28402,10 @@ def student_unread_count():
 @login_required('student')
 def clear_student_chat(contact_id):
     """مسح محادثة الطالب"""
-    student_id = session['user_id']
     contact_type = request.args.get('type', 'student')
     if contact_type not in ('student', 'admin'):
         contact_type = 'student'
-    execute_query("""
-        DELETE FROM messages 
-        WHERE ((sender_id = ? AND sender_type = 'student' AND receiver_id = ? AND receiver_type = ?)
-           OR (sender_id = ? AND sender_type = ? AND receiver_id = ? AND receiver_type = 'student'))
-          AND (is_group = 0 OR is_group IS NULL)
-    """, (student_id, contact_id, contact_type, contact_id, contact_type, student_id))
+    clear_conversation(session['user_id'], 'student', contact_id, contact_type)
     return jsonify({'success': True})
 @app.route('/student/store')
 @login_required('student')
