@@ -221,8 +221,11 @@ def column_exists(table_name, column_name):
 # ============================================================ #
 # ====== SECTION 3: AUTHENTICATION HELPERS ==================== #
 # ============================================================ #
-def login_required(role=None):
-    """مزخرف للتحقق من تسجيل الدخول مع دور محدد"""
+def login_required(role=None, assistant_permission=None):
+    """مزخرف للتحقق من تسجيل الدخول مع دور محدد.
+    عند تحديد assistant_permission، يُسمح للمساعد (role='assistant') بدخول صفحة
+    مخصصة للمشرف (role='admin') فقط إذا كانت لديه هذه الصلاحية فعلياً (أو صلاحية
+    view_all)، بدلاً من منح كل المساعدين وصولاً كاملاً بغض النظر عن صلاحياتهم."""
     def decorator(f):
         @wraps(f)
         def decorated_function(*args, **kwargs):
@@ -232,8 +235,10 @@ def login_required(role=None):
             if role and session.get('role') != role:
                 # التحقق من صلاحيات المساعد
                 if role == 'admin' and session.get('role') == 'assistant':
-                    # المساعد له صلاحيات محدودة
-                    return f(*args, **kwargs)
+                    if assistant_permission is None or has_assistant_permission(assistant_permission):
+                        return f(*args, **kwargs)
+                    flash('غير مصرح لك بالوصول إلى هذه الصفحة (صلاحية غير ممنوحة)', 'danger')
+                    return redirect(url_for('student_assistant'))
                 flash('غير مصرح لك بالوصول إلى هذه الصفحة', 'danger')
                 return redirect(url_for('home'))
             return f(*args, **kwargs)
@@ -16817,6 +16822,21 @@ ASSISTANT_DASHBOARD_HTML = r'''
             flex-wrap: wrap;
         }
 
+        .nav-bar {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+            margin-bottom: 16px;
+            padding: 10px 16px;
+            background: var(--glass);
+            border: 1px solid var(--glass-border);
+            border-radius: 14px;
+            backdrop-filter: blur(10px);
+        }
+        .nav-bar a { color: var(--text-muted); text-decoration: none; padding: 6px 14px; border-radius: 8px; font-size: 13px; font-weight: 500; transition: all 0.3s ease; }
+        .nav-bar a:hover { background: rgba(255,255,255,0.04); color: var(--text-primary); }
+        .nav-bar a.active { background: var(--gold); color: #1a1a1a; }
+
         /* ==========================================
                    SECTION 5: الإحصائيات السريعة
                    ========================================== */
@@ -17260,6 +17280,7 @@ ASSISTANT_DASHBOARD_HTML = r'''
             .header .actions {
                 justify-content: center;
             }
+            .nav-bar { justify-content: center; }
             .container {
                 padding: 12px;
             }
@@ -17307,6 +17328,19 @@ ASSISTANT_DASHBOARD_HTML = r'''
                 <button class="btn btn-outline btn-sm" onclick="refreshData()">🔄 تحديث</button>
                 <a href="{{ url_for('student_dashboard') }}" class="btn btn-outline btn-sm">⬅ الرئيسية</a>
             </div>
+        </div>
+
+        <!-- ===== شريط التنقل ===== -->
+        <div class="nav-bar">
+            <a href="{{ url_for('student_assistant') }}" class="active">🧑‍🤝‍🧑 لوحة المساعد</a>
+            <a href="{{ url_for('student_dashboard') }}">📊 لوحتي الشخصية</a>
+            {% if 'view_students' in perms or 'view_all' in perms %}<a href="{{ url_for('manage_students') }}">👨‍🎓 الطلاب</a>{% endif %}
+            {% if 'manage_evaluation' in perms or 'view_all' in perms %}<a href="{{ url_for('evaluation') }}">📊 التقييم</a>{% endif %}
+            {% if 'grade_homework' in perms or 'view_all' in perms %}<a href="{{ url_for('homework') }}">📚 الواجبات</a>{% endif %}
+            {% if 'manage_competitions' in perms or 'view_all' in perms %}<a href="{{ url_for('competitions') }}">🏆 المسابقات</a>{% endif %}
+            {% if 'send_messages' in perms or 'view_all' in perms %}<a href="{{ url_for('admin_messages') }}">💬 الرسائل</a>{% endif %}
+            {% if 'view_analytics' in perms or 'view_all' in perms %}<a href="{{ url_for('admin_analytics') }}">📈 التحليلات</a>{% endif %}
+            <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
         </div>
 
         <!-- ===== بطاقة المساعد ===== -->
@@ -25553,9 +25587,108 @@ def admin_session_history():
 @app.route('/student/assistant')
 @login_required('student')
 def student_assistant():
-    """لوحة المساعد (قيد التطوير)"""
-    flash('هذه الميزة قيد التطوير حالياً', 'info')
-    return redirect(url_for('student_dashboard'))
+    """لوحة المساعد"""
+    student = get_current_user()
+    assistant = get_assistant_by_student_id(student['id'])
+    if not assistant:
+        flash('ليست لديك صلاحيات مساعد', 'danger')
+        return redirect(url_for('student_dashboard'))
+
+    assistant_info = dict(student, **dict(assistant))
+    perms = assistant['permissions'].split(',') if assistant['permissions'] else []
+    has_all = 'view_all' in perms
+
+    tasks = get_assistant_tasks(assistant['id'])
+    xp_history = get_assistant_xp_history(assistant['id'])
+
+    total_students = query_one("SELECT COUNT(*) as count FROM students WHERE status = 'active'")['count']
+    stats = {
+        'total_students': total_students,
+        'completed_tasks': len([t for t in tasks if t['status'] == 'completed']),
+        'pending_tasks': len([t for t in tasks if t['status'] != 'completed']),
+        'total_xp': assistant.get('xp_points', 0) or 0,
+    }
+
+    students = get_active_students() if (has_all or 'view_students' in perms) else []
+
+    recent_evaluations = []
+    if has_all or 'manage_evaluation' in perms:
+        recent_evaluations = query_all("""
+            SELECT de.*, s.name as student_name
+            FROM daily_evaluations de
+            JOIN students s ON s.id = de.student_id
+            ORDER BY de.date DESC LIMIT 8
+        """)
+
+    active_competitions = []
+    if has_all or 'manage_competitions' in perms:
+        active_competitions = query_all("""
+            SELECT c.*,
+                   (SELECT COUNT(*) FROM competition_grades WHERE competition_id = c.id) as participants_count
+            FROM competitions c
+            WHERE c.active = 1
+            ORDER BY c.date DESC
+        """)
+
+    perm_labels = {
+        'view_students': '👁️ عرض الطلاب', 'send_messages': '💬 إرسال رسائل', 'grade_homework': '📚 تقييم واجبات',
+        'manage_evaluation': '📊 تقييم يومي', 'manage_competitions': '🏆 إدارة مسابقات', 'view_analytics': '📈 عرض تحليلات',
+        'manage_students': '👨‍🎓 إدارة الطلاب', 'manage_attendance': '📋 إدارة الحضور', 'manage_sessions': '🗂️ إدارة الحصص',
+        'export_data': '📥 تصدير البيانات', 'manage_reports': '📊 إدارة التقارير', 'manage_announcements': '📢 إدارة الإعلانات',
+        'manage_events': '🎪 إدارة الفعاليات', 'manage_badges': '🏅 إدارة الشارات', 'view_all': '👑 صلاحيات كاملة'
+    }
+
+    return render_template_string(ASSISTANT_DASHBOARD_HTML,
+                                   student=student,
+                                   assistant_info=assistant_info,
+                                   stats=stats,
+                                   perms=perms,
+                                   perm_labels=perm_labels,
+                                   tasks=tasks,
+                                   xp_history=xp_history,
+                                   students=students,
+                                   recent_evaluations=recent_evaluations,
+                                   active_competitions=active_competitions,
+                                   datetime=datetime)
+@app.route('/admin/assistant/complete_task', methods=['POST'])
+@login_required('student')
+def assistant_complete_task():
+    """إكمال مهمة موكلة للمساعد الحالي (يمنحه +5 XP تلقائياً)"""
+    assistant = get_assistant_by_student_id(session.get('user_id'))
+    if not assistant:
+        return jsonify({'success': False, 'message': 'ليست لديك صلاحيات مساعد'})
+
+    data = request.get_json(silent=True) or {}
+    task_id = data.get('task_id')
+    if not task_id:
+        return jsonify({'success': False, 'message': 'مهمة غير محددة'})
+
+    task = query_one("SELECT * FROM assistant_tasks WHERE id = ?", (task_id,))
+    if not task or task['assistant_id'] != assistant['id']:
+        return jsonify({'success': False, 'message': 'المهمة غير موجودة أو لا تخصك'})
+
+    update_task_status(task_id, 'completed')
+    return jsonify({'success': True, 'message': 'تم إكمال المهمة'})
+@app.route('/admin/assistant/update_task_status', methods=['POST'])
+@login_required('student')
+def assistant_update_task_status():
+    """تحديث حالة مهمة موكلة للمساعد الحالي"""
+    assistant = get_assistant_by_student_id(session.get('user_id'))
+    if not assistant:
+        return jsonify({'success': False, 'message': 'ليست لديك صلاحيات مساعد'})
+
+    data = request.get_json(silent=True) or {}
+    task_id = data.get('task_id')
+    status = data.get('status')
+    if not task_id or status not in ('pending', 'in_progress', 'completed'):
+        return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
+
+    task = query_one("SELECT * FROM assistant_tasks WHERE id = ?", (task_id,))
+    if not task or task['assistant_id'] != assistant['id']:
+        return jsonify({'success': False, 'message': 'المهمة غير موجودة أو لا تخصك'})
+
+    update_task_status(task_id, status)
+    return jsonify({'success': True, 'message': 'تم تحديث حالة المهمة'})
 @app.route('/logout')
 def logout():
     """تسجيل الخروج"""
@@ -25871,10 +26004,14 @@ def admin_promotion_decide(request_id):
         flash('قرار غير صالح', 'danger')
     return redirect(url_for('admin_promotions'))
 @app.route('/admin/students', methods=['GET', 'POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='view_students')
 def manage_students():
     """إدارة الطلاب"""
     if request.method == 'POST':
+        # عرض الطلاب لا يعني الإذن بتعديلهم: نطلب صلاحية أعلى للمساعدين عند التعديل
+        if session.get('role') == 'assistant' and not has_assistant_permission('manage_students'):
+            flash('غير مصرح لك بتعديل بيانات الطلاب، لديك صلاحية العرض فقط', 'danger')
+            return redirect(url_for('manage_students'))
         action = request.form.get('action', 'add')
         name = request.form.get('name', '').strip()
         email = request.form.get('email', '').strip()
@@ -26045,7 +26182,7 @@ def check_new_requests():
         'pending_count': pending['count'] if pending else 0
     })
 @app.route('/admin/evaluation')
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_evaluation')
 def evaluation():
     """صفحة التقييم وسجل الحصص"""
     students = get_active_students()
@@ -26082,7 +26219,7 @@ def evaluation():
                                    datetime=datetime,
                                    timedelta=timedelta)
 @app.route('/admin/evaluation/add_month', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_evaluation')
 def add_month():
     """إضافة شهر جديد"""
     data = request.get_json()
@@ -26097,13 +26234,13 @@ def add_month():
     )
     return jsonify({'success': True, 'month_id': month_id})
 @app.route('/admin/evaluation/delete_month/<int:month_id>', methods=['DELETE'])
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_evaluation')
 def delete_month(month_id):
     """حذف شهر"""
     execute_query("DELETE FROM months WHERE id = ?", (month_id,))
     return jsonify({'success': True})
 @app.route('/admin/evaluation/add_session', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_evaluation')
 def add_session():
     """إضافة حصة جديدة"""
     data = request.get_json()
@@ -26133,7 +26270,7 @@ def add_session():
     
     return jsonify({'success': True, 'session_id': session_id})
 @app.route('/admin/evaluation/add_session_all', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_evaluation')
 def add_session_all():
     """تسجيل حصة لكل الطلاب النشطين دفعة واحدة"""
     data = request.get_json()
@@ -26186,13 +26323,13 @@ def add_session_all():
         message += f' (تم تجاوز {skipped_count} كان لديهم حصة مسجلة مسبقاً بنفس التاريخ)'
     return jsonify({'success': True, 'added_count': added_count, 'skipped_count': skipped_count, 'message': message})
 @app.route('/admin/evaluation/delete_session/<int:session_id>', methods=['DELETE'])
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_evaluation')
 def delete_session(session_id):
     """حذف حصة"""
     execute_query("DELETE FROM sessions WHERE id = ?", (session_id,))
     return jsonify({'success': True})
 @app.route('/admin/evaluation/save_sessions', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_evaluation')
 def save_sessions():
     """حفظ بيانات التقييمات"""
     data = request.get_json()
@@ -26216,7 +26353,7 @@ def save_sessions():
     
     return jsonify({'success': True})
 @app.route('/admin/evaluation/send_sessions', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_evaluation')
 def send_sessions():
     """إرسال التقييمات للطلاب ومكافأتهم تلقائياً بنقاط XP حسب درجاتهم"""
     data = request.get_json()
@@ -26248,7 +26385,7 @@ def send_sessions():
     
     return jsonify({'success': True, 'sent_count': sent_count})
 @app.route('/admin/evaluation/copy_previous', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_evaluation')
 def copy_previous_evaluation():
     """نسخ تقييمات الأمس إلى اليوم"""
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
@@ -26286,7 +26423,7 @@ def copy_previous_evaluation():
     
     return jsonify({'success': True})
 @app.route('/admin/homework')
-@login_required('admin')
+@login_required('admin', assistant_permission='grade_homework')
 def homework():
     """إدارة الواجبات"""
     students = get_active_students()
@@ -26316,7 +26453,7 @@ def homework():
                                    datetime=datetime,
                                    timedelta=timedelta)
 @app.route('/admin/homework/add', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='grade_homework')
 def add_homework():
     """إضافة واجب جديد"""
     homework_type = request.form.get('homework_type')
@@ -26350,7 +26487,7 @@ def add_homework():
     
     return jsonify({'success': True, 'message': f'تم إضافة الواجب لـ {len(student_ids)} طالب'})
 @app.route('/admin/homework/copy_previous', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='grade_homework')
 def copy_previous_homework():
     """نسخ واجبات الأمس إلى اليوم"""
     yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
@@ -26377,7 +26514,7 @@ def copy_previous_homework():
     
     return jsonify({'success': True})
 @app.route('/admin/competitions')
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_competitions')
 def competitions():
     """إدارة المسابقات"""
     competitions_list = query_all("""
@@ -26401,9 +26538,13 @@ def competitions():
             if grade:
                 grades_by_student[student['id']][comp['id']] = grade
     
-    # جلب المنسحبين (أي طالب منسحب من مسابقة واحدة على الأقل)
-    withdrawn_rows = query_all("SELECT DISTINCT student_id FROM competition_grades WHERE withdrawn = 1")
-    withdrawn_students = [row['student_id'] for row in withdrawn_rows]
+    # جلب المنسحبين
+    withdrawn_students = []
+    for comp in competitions_list:
+        if isinstance(comp, dict) and comp.get('participants'):
+            for p in comp['participants']:
+                if isinstance(p, dict) and p.get('withdrawn'):
+                    withdrawn_students.append(p['student_id'])
     
     return render_template_string(COMPETITIONS_HTML,
                                    competitions=competitions_list,
@@ -26412,54 +26553,8 @@ def competitions():
                                    withdrawn_students=withdrawn_students,
                                    datetime=datetime,
                                    timedelta=timedelta)
-@app.route('/admin/competitions/withdraw', methods=['POST'])
-@login_required('admin')
-def withdraw_competition_student():
-    """انسحاب طالب من مسابقة محددة، أو من جميع مسابقاته إذا لم يُحدد competition_id"""
-    data = request.get_json(silent=True) or {}
-    student_id = data.get('student_id')
-    competition_id = data.get('competition_id')
-
-    if not student_id:
-        return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
-
-    if competition_id:
-        execute_query(
-            "UPDATE competition_grades SET withdrawn = 1 WHERE student_id = ? AND competition_id = ?",
-            (student_id, competition_id)
-        )
-    else:
-        execute_query(
-            "UPDATE competition_grades SET withdrawn = 1 WHERE student_id = ?",
-            (student_id,)
-        )
-
-    return jsonify({'success': True, 'message': 'تم انسحاب الطالب بنجاح'})
-@app.route('/admin/competitions/unwithdraw', methods=['POST'])
-@login_required('admin')
-def unwithdraw_competition_student():
-    """إلغاء انسحاب طالب من مسابقة محددة، أو من جميع مسابقاته إذا لم يُحدد competition_id"""
-    data = request.get_json(silent=True) or {}
-    student_id = data.get('student_id')
-    competition_id = data.get('competition_id')
-
-    if not student_id:
-        return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
-
-    if competition_id:
-        execute_query(
-            "UPDATE competition_grades SET withdrawn = 0 WHERE student_id = ? AND competition_id = ?",
-            (student_id, competition_id)
-        )
-    else:
-        execute_query(
-            "UPDATE competition_grades SET withdrawn = 0 WHERE student_id = ?",
-            (student_id,)
-        )
-
-    return jsonify({'success': True, 'message': 'تم إلغاء انسحاب الطالب بنجاح'})
 @app.route('/admin/competitions/add', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_competitions')
 def add_competition():
     """إضافة مسابقة جديدة"""
     data = {
@@ -26488,7 +26583,7 @@ def add_competition():
     
     return jsonify({'success': True, 'message': 'تم إضافة المسابقة بنجاح'})
 @app.route('/admin/competitions/toggle/<int:comp_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_competitions')
 def toggle_competition(comp_id):
     """تبديل حالة المسابقة، ومكافأة الفائز تلقائياً عند إغلاق المسابقة"""
     comp = get_competition_by_id(comp_id)
@@ -26516,7 +26611,7 @@ def toggle_competition(comp_id):
         return jsonify({'success': True})
     return jsonify({'success': False})
 @app.route('/admin/competitions/toggle_registration/<int:comp_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_competitions')
 def toggle_competition_registration(comp_id):
     """تبديل حالة التسجيل في المسابقة"""
     comp = get_competition_by_id(comp_id)
@@ -26525,13 +26620,13 @@ def toggle_competition_registration(comp_id):
         return jsonify({'success': True})
     return jsonify({'success': False})
 @app.route('/admin/competitions/delete/<int:comp_id>', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_competitions')
 def delete_competition_route(comp_id):
     """حذف مسابقة"""
     delete_competition(comp_id)
     return jsonify({'success': True})
 @app.route('/admin/competitions/save_grades', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_competitions')
 def save_competition_grades():
     """حفظ درجات المسابقات"""
     grades = request.form.get('grades', {})
@@ -26561,13 +26656,13 @@ def save_competition_grades():
     
     return jsonify({'success': True, 'totals': totals})
 @app.route('/admin/competitions/grades/<int:comp_id>')
-@login_required('admin')
+@login_required('admin', assistant_permission='manage_competitions')
 def get_competition_grades_json(comp_id):
     """الحصول على درجات مسابقة بصيغة JSON"""
     grades = get_competition_grades(comp_id)
     return jsonify({'success': True, 'grades': [dict(g) for g in grades]})
 @app.route('/admin/messages')
-@login_required('admin')
+@login_required('admin', assistant_permission='send_messages')
 def admin_messages():
     """صفحة رسائل المشرف"""
     admin = get_current_user()
@@ -26656,7 +26751,7 @@ def admin_messages():
                                    students=get_active_students(),
                                    datetime=datetime)
 @app.route('/admin/messages/send', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='send_messages')
 def send_admin_message():
     """إرسال رسالة من المشرف"""
     admin = get_current_user()
@@ -26677,7 +26772,7 @@ def send_admin_message():
     
     return jsonify({'success': False, 'message': 'بيانات غير صالحة'})
 @app.route('/admin/messages/send_file', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='send_messages')
 def send_admin_file():
     """إرسال ملف من المشرف"""
     admin = get_current_user()
@@ -26699,7 +26794,7 @@ def send_admin_file():
     
     return jsonify({'success': True, 'file_url': file_url})
 @app.route('/admin/messages/create_group', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='send_messages')
 def create_message_group():
     """إنشاء مجموعة رسائل جديدة"""
     name = request.form.get('group_name')
@@ -26722,7 +26817,7 @@ def create_message_group():
     
     return jsonify({'success': True, 'group_id': group_id})
 @app.route('/admin/messages/group/add_member', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='send_messages')
 def add_group_member():
     """إضافة طالب إلى مجموعة موجودة"""
     data = request.get_json() or request.form
@@ -26749,7 +26844,7 @@ def add_group_member():
     )
     return jsonify({'success': True, 'message': 'تمت إضافة الطالب للمجموعة'})
 @app.route('/admin/messages/group/remove_member', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='send_messages')
 def remove_group_member():
     """إزالة طالب من مجموعة"""
     data = request.get_json() or request.form
@@ -26765,7 +26860,7 @@ def remove_group_member():
     )
     return jsonify({'success': True, 'message': 'تمت إزالة الطالب من المجموعة'})
 @app.route('/admin/messages/send_voice', methods=['POST'])
-@login_required('admin')
+@login_required('admin', assistant_permission='send_messages')
 def send_admin_voice():
     """إرسال رسالة صوتية من المشرف"""
     admin = get_current_user()
@@ -27006,7 +27101,7 @@ def admin_student_memorization_confirm_all(student_id):
                      'breakdown': breakdown, 'pending_count': 0})
 
 @app.route('/admin/analytics')
-@login_required('admin')
+@login_required('admin', assistant_permission='view_analytics')
 def admin_analytics():
     """صفحة التحليلات"""
     students_count = query_one("SELECT COUNT(*) as count FROM students")['count']
@@ -28515,16 +28610,6 @@ def add_theme_color_column():
 
 add_theme_color_column()
 
-def add_competition_withdraw_column():
-    """إضافة عمود الانسحاب من المسابقات (يُستخدم في ميزة انسحاب/إلغاء انسحاب الطالب)"""
-    try:
-        execute_query("ALTER TABLE competition_grades ADD COLUMN IF NOT EXISTS withdrawn INTEGER DEFAULT 0")
-        print("✅ تم التأكد من وجود عمود الانسحاب في جدول درجات المسابقات")
-    except Exception as e:
-        print(f"⚠️ خطأ أثناء إضافة عمود الانسحاب: {e}")
-
-add_competition_withdraw_column()
-
 def grant_bonus_xp_once(email, amount, reason):
     """منح نقاط XP لمرة واحدة فقط لطالب محدد عبر بريده الإلكتروني (لا تتكرر عند
     إعادة تشغيل السيرفر بفضل التحقق من وجود حركة بنفس السبب مسبقاً)"""
@@ -28563,7 +28648,6 @@ def set_student_level_once(email, level):
         print(f"⚠️ خطأ أثناء ضبط مستوى الطالب: {e}")
 
 set_student_level_once('yacinezaoui2010@gmail.com', 7)
-
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 5000))
