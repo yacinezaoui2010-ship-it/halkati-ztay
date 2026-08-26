@@ -2124,14 +2124,16 @@ def get_unlocked_target_ids(viewer_id):
 def create_book_offer(data):
     """إنشاء عرض بيع كتاب من طالب"""
     return execute_query("""
-        INSERT INTO book_offers (student_id, title, author, description, price_points, status)
-        VALUES (?, ?, ?, ?, ?, 'pending')
+        INSERT INTO book_offers (student_id, title, author, description, price_points, cover_url, pdf_url, status)
+        VALUES (?, ?, ?, ?, ?, ?, ?, 'pending')
     """, (
         data['student_id'],
         data['title'],
         data.get('author', ''),
         data.get('description', ''),
-        data.get('price_points', 10)
+        data.get('price_points', 10),
+        data.get('cover_url'),
+        data.get('pdf_url')
     ))
 def get_pending_offers():
     """الحصول على عروض البيع المعلقة"""
@@ -2161,6 +2163,8 @@ def approve_offer(offer_id, final_price=None):
         'description': offer['description'],
         'price_points': final_price or offer['price_points'],
         'quantity': 1,
+        'cover_url': offer.get('cover_url') if hasattr(offer, 'get') else None,
+        'pdf_url': offer.get('pdf_url') if hasattr(offer, 'get') else None,
         'seller_student_id': offer['student_id'],
         'active': 1
     }
@@ -24511,6 +24515,24 @@ STUDENT_STORE_HTML = r'''
                         </div>
                     </div>
 
+                    <!-- رفع ملف PDF من الهاتف (نسخة الكتاب الذي كتبته بنفسك) -->
+                    <div class="form-group">
+                        <label>📄 ملف الكتاب PDF <span style="font-size:12px;color:var(--text-muted);font-weight:400;">(كتاب من تأليفك أنت، وليس محمّلاً من مصدر آخر)</span></label>
+                        <div class="file-upload-area" id="pdfUploadArea">
+                            <div class="upload-icon">📄</div>
+                            <div class="upload-text">انقر لاختيار ملف PDF</div>
+                            <div class="upload-sub">يدعم: PDF فقط</div>
+                            <input type="file" name="pdf_file" id="pdfFileInput" accept=".pdf,application/pdf" onchange="handleFileSelect(this, 'pdf')">
+                        </div>
+                        <div class="file-preview" id="pdfPreview">
+                            <span class="file-icon">📄</span>
+                            <span class="file-name" id="pdfFileName">اسم الملف</span>
+                            <span class="file-size" id="pdfFileSize">0 KB</span>
+                            <button type="button" class="remove-file" onclick="removeFile('pdf')">✕</button>
+                        </div>
+                        <div class="hint" style="font-size:11px;color:var(--text-muted);margin-top:4px;">📱 تحميل من الهاتف مباشرة</div>
+                    </div>
+
                     <div class="form-group">
                         <label>📝 الوصف</label>
                         <textarea name="description" placeholder="وصف الكتاب وحالته..."></textarea>
@@ -24529,7 +24551,7 @@ STUDENT_STORE_HTML = r'''
                     {% for offer in my_offers %}
                     <div class="offer-item">
                         <div class="info">
-                            <div class="title">{{ offer.title }}</div>
+                            <div class="title">{{ offer.title }}{% if offer.pdf_url %} <span style="font-size:11px;color:var(--gold);">📄 PDF</span>{% endif %}</div>
                             <div class="sub">{{ offer.author or 'غير محدد' }} · {{ offer.price_points }} نقطة</div>
                         </div>
                         <span class="status-badge {{ offer.status }}">
@@ -24726,9 +24748,15 @@ STUDENT_STORE_HTML = r'''
             const file = input.files[0];
             if (!file) return;
 
-            // التحقق من الحجم (5MB كحد أقصى للصور)
-            if (file.size > 5 * 1024 * 1024) {
-                showToast('error', '❌ خطأ', 'الملف كبير جداً، الحد الأقصى 5MB');
+            // التحقق من الحجم (5MB للصور، 20MB لملفات PDF)
+            const maxSize = (type === 'pdf' ? 20 : 5) * 1024 * 1024;
+            if (file.size > maxSize) {
+                showToast('error', '❌ خطأ', 'الملف كبير جداً، الحد الأقصى ' + (type === 'pdf' ? '20MB' : '5MB'));
+                input.value = '';
+                return;
+            }
+            if (type === 'pdf' && !file.name.toLowerCase().endsWith('.pdf')) {
+                showToast('error', '❌ خطأ', 'يجب اختيار ملف بصيغة PDF فقط');
                 input.value = '';
                 return;
             }
@@ -24741,7 +24769,7 @@ STUDENT_STORE_HTML = r'''
             sizeEl.textContent = (file.size / 1024).toFixed(1) + ' KB';
 
             const iconEl = preview.querySelector('.file-icon');
-            iconEl.textContent = '🖼️';
+            iconEl.textContent = type === 'pdf' ? '📄' : '🖼️';
 
             preview.classList.add('show');
 
@@ -24762,7 +24790,7 @@ STUDENT_STORE_HTML = r'''
 
             const area = document.getElementById(type + 'UploadArea');
             if (area) {
-                area.querySelector('.upload-text').textContent = type === 'cover' ? 'انقر لاختيار صورة الغلاف' : 'انقر لاختيار ملف';
+                area.querySelector('.upload-text').textContent = type === 'cover' ? 'انقر لاختيار صورة الغلاف' : 'انقر لاختيار ملف PDF';
                 area.querySelector('.upload-icon').textContent = type === 'cover' ? '🖼️' : '📄';
             }
         }
@@ -24797,6 +24825,7 @@ STUDENT_STORE_HTML = r'''
                         showToast('success', '✅ تم', data.message || 'تم إرسال العرض بنجاح');
                         form.reset();
                         removeFile('cover');
+                        removeFile('pdf');
                         setTimeout(function() {
                             location.reload();
                         }, 1500);
@@ -28513,6 +28542,7 @@ def sell_book_route():
     description = request.form.get('description')
     price_points = request.form.get('price_points', 10)
     cover_file = request.files.get('cover_file')
+    pdf_file = request.files.get('pdf_file')
     
     if not title:
         return jsonify({'success': False, 'message': 'عنوان الكتاب مطلوب'})
@@ -28522,13 +28552,21 @@ def sell_book_route():
     if cover_file and cover_file.filename:
         cover_url = save_uploaded_file(cover_file, 'books')
     
+    # رفع ملف PDF من الهاتف (نسخة الكتاب التي كتبها الطالب بنفسه)
+    pdf_url = None
+    if pdf_file and pdf_file.filename:
+        if not pdf_file.filename.lower().endswith('.pdf'):
+            return jsonify({'success': False, 'message': 'يجب أن يكون الملف بصيغة PDF'})
+        pdf_url = save_uploaded_file(pdf_file, 'books')
+    
     create_book_offer({
         'student_id': student['id'],
         'title': title,
         'author': author,
         'description': description,
         'price_points': int(price_points),
-        'cover_url': cover_url
+        'cover_url': cover_url,
+        'pdf_url': pdf_url
     })
     
     return jsonify({'success': True, 'message': 'تم إرسال العرض بنجاح'})
@@ -28670,6 +28708,8 @@ def add_theme_color_column():
         execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS owned_theme_gradients TEXT")
         execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS info_encrypted INTEGER DEFAULT 0")
         execute_query("ALTER TABLE students ADD COLUMN IF NOT EXISTS points_hidden INTEGER DEFAULT 0")
+        execute_query("ALTER TABLE book_offers ADD COLUMN IF NOT EXISTS cover_url TEXT")
+        execute_query("ALTER TABLE book_offers ADD COLUMN IF NOT EXISTS pdf_url TEXT")
         execute_query("""
             CREATE TABLE IF NOT EXISTS student_unlocks (
                 id SERIAL PRIMARY KEY,
