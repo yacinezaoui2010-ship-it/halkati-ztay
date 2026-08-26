@@ -10053,8 +10053,12 @@ COMPETITIONS_HTML = r'''
             <a href="{{ url_for('homework') }}">📚 واجبات</a>
             <a href="{{ url_for('competitions') }}" class="active">🏆 مسابقات</a>
             <a href="{{ url_for('admin_messages') }}">💬 رسائل</a>
-        <a href="{{ url_for('admin_promotions') }}">🎖️ الترقيات</a>
+            <a href="{{ url_for('admin_promotions') }}">🎖️ الترقيات</a>
             <a href="{{ url_for('admin_session_history') }}">🗂️ سجل الحصص</a>
+            <a href="{{ url_for('admin_analytics') }}">📈 تحليلات</a>
+            <a href="{{ url_for('admin_assistants') }}">🧑‍🤝‍🧑 مساعدين</a>
+            <a href="{{ url_for('admin_duels') }}">⚔️ تحديات</a>
+            <a href="{{ url_for('admin_store') }}">🛍️ متجر</a>
         </div>
 
         <!-- ===== الإحصائيات ===== -->
@@ -21028,13 +21032,14 @@ STUDENT_COMPETITIONS_HTML = r'''
             <a href="{{ url_for('student_report') }}">📊 تقريري</a>
             <a href="{{ url_for('student_competitions') }}" class="active">🏆 مسابقاتي</a>
             <a href="{{ url_for('student_messages') }}">💬 رسائلي</a>
-        <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
-        <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
-        {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
+            <a href="{{ url_for('student_level') }}">🎖️ مستواي</a>
+            <a href="{{ url_for('student_memorization') }}">📖 سوري المحفوظة</a>
+            {% if student.level >= 7 %}<a href="{{ url_for('student_promotions') }}">⚖️ طلبات التقييم</a>{% endif %}
             <a href="{{ url_for('student_points') }}">💰 رصيدي</a>
             <a href="{{ url_for('student_store') }}">🛍️ المتجر</a>
             <a href="{{ url_for('student_duels') }}">⚔️ تحدياتي</a>
             <a href="{{ url_for('leaderboard') }}">🥇 لوحة الصدارة</a>
+            {% if assistant_info %}<a href="{{ url_for('student_assistant') }}" style="color:var(--gold-light);">🧑‍🤝‍🧑 لوحة المساعد</a>{% endif %}
         </div>
 
         <!-- ===== الإحصائيات ===== -->
@@ -27817,10 +27822,14 @@ def student_competitions():
         comp['won'] = 1 if comp.get('my_rank') == 1 else 0
         comp['completed'] = 1 if comp['date'] < get_today() else 0
     
+    # التحقق من صلاحيات المساعد
+    assistant_info = get_assistant_by_student_id(student['id'])
+
     return render_template_string(STUDENT_COMPETITIONS_HTML,
                                    student=student,
                                    competitions=competitions_list,
                                    student_points=student_points,
+                                   assistant_info=assistant_info,
                                    datetime=datetime)
 @app.route('/student/competitions/register/<int:comp_id>', methods=['POST'])
 @login_required('student')
